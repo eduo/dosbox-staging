@@ -405,6 +405,16 @@ if(BOXER_INTEGRATED)
   # Boxer will link this into its macOS application
   add_library(dosbox STATIC src/main.cpp src/dosbox.cpp)
 
+  # Boxer-specific source files
+  target_sources(dosbox PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/boxer/boxer_hooks.cpp
+  )
+
+  # Include Boxer headers
+  target_include_directories(dosbox PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/boxer
+  )
+
   # Disable SDL main replacement (Boxer has its own main)
   target_compile_definitions(dosbox PRIVATE SDL_MAIN_HANDLED)
 

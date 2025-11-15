@@ -4,6 +4,10 @@
 
 #include "dosbox.h"
 
+#ifdef BOXER_INTEGRATED
+#include "boxer/boxer_hooks.h"
+#endif
+
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -109,6 +113,13 @@ static Bitu normal_loop()
 	Bits ret;
 
 	while (true) {
+#ifdef BOXER_INTEGRATED
+		// CRITICAL: Check if Boxer wants to abort emulation
+		// Called ~10,000 times/sec, must be <1μs
+		if (!BOXER_HOOK_BOOL(runLoopShouldContinue)) {
+			return 1; // Exit emulation immediately
+		}
+#endif
 		if (PIC_RunQueue()) {
 			ret = (*cpudecoder)();
 			if (ret < 0) {

@@ -84,6 +84,9 @@ if (APPLE)
   add_compile_options("-Wno-deprecated-declarations")
 endif()
 
+# Boxer integration option (default OFF for upstream compatibility)
+option(BOXER_INTEGRATED "Build as Boxer-integrated library" OFF)
+
 option(OPT_DEBUGGER "Enable debugger" OFF)
 option(OPT_HEAVY_DEBUGGER "Enable heavy debugger" OFF)
 if (OPT_HEAVY_DEBUGGER)
@@ -371,12 +374,15 @@ configure_file(
 
 # Allow dynamically loading externalised vcpkg dependencies at runtime
 # from the $EXE_DIR/lib directory (must be set before 'add_executable')
-if (APPLE)
-  set(CMAKE_INSTALL_RPATH "@executable_path/lib")
-else()
-  set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
+# Note: Only needed for executable builds, not for Boxer library integration
+if (NOT BOXER_INTEGRATED)
+  if (APPLE)
+    set(CMAKE_INSTALL_RPATH "@executable_path/lib")
+  else()
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
+  endif()
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 endif()
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 
 # Find common external dependencies
 find_package(PkgConfig REQUIRED)
@@ -392,7 +398,37 @@ if (C_ALSA)
 endif()
 pkg_check_modules(SPEEXDSP REQUIRED IMPORTED_TARGET speexdsp)
 
-add_executable(dosbox src/main.cpp src/dosbox.cpp)
+if(BOXER_INTEGRATED)
+  message(STATUS "Building DOSBox Staging for Boxer integration")
+
+  # Build as STATIC library instead of executable
+  # Boxer will link this into its macOS application
+  add_library(dosbox STATIC src/main.cpp src/dosbox.cpp)
+
+  # Disable SDL main replacement (Boxer has its own main)
+  target_compile_definitions(dosbox PRIVATE SDL_MAIN_HANDLED)
+
+  # Export include directories for Boxer's Xcode project
+  set(DOSBOX_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    PARENT_SCOPE
+  )
+
+  # macOS-specific settings
+  if(APPLE)
+    set_target_properties(dosbox PROPERTIES
+      FRAMEWORK FALSE
+      MACOSX_RPATH TRUE
+    )
+  endif()
+
+else()
+  # Standard DOSBox Staging build (unchanged from upstream)
+  add_executable(dosbox src/main.cpp src/dosbox.cpp)
+
+endif()
+
 target_include_directories(
   dosbox PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/include
 )

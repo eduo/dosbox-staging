@@ -151,7 +151,7 @@ pkg_macos()
 
     # Create universal binary from both architectures
     mkdir dosbox-universal
-    lipo dosbox-x86_64/dosbox dosbox-arm64/dosbox -create -output dosbox-universal/dosbox
+    lipo ${build_dir}/dosbox-x86_64/dosbox ${build_dir}/dosbox-arm64/dosbox -create -output dosbox-universal/dosbox
 
     install -d   "${macos_content_dir}/MacOS/"
     install      dosbox-universal/dosbox                 "${macos_content_dir}/MacOS/"

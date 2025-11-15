@@ -94,3 +94,6 @@ cmake-build-*/
 
 # Tests
 /Testing
+build-staging
+output/dist
+dosbox-universal

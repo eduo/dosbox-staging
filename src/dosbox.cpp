@@ -423,8 +423,21 @@ static bool is_shutdown_requested = false;
 
 void DOSBOX_RunMachine()
 {
+#ifdef BOXER_INTEGRATED
+	// Lifecycle hook: Boxer initializes resources before emulation begins
+	// (e.g., Metal rendering contexts, CoreAudio buffers, input devices)
+	BOXER_HOOK_VOID(runLoopWillStartWithContextInfo, nullptr);
+#endif
+
 	while ((*loop)() == 0 && !is_shutdown_requested)
 		;
+
+#ifdef BOXER_INTEGRATED
+	// Lifecycle hook: Boxer cleans up resources after emulation ends
+	// Called in all exit paths: normal exit, exception, or emergency abort
+	// (e.g., save game state, release resources, update UI)
+	BOXER_HOOK_VOID(runLoopDidFinishWithContextInfo, nullptr);
+#endif
 }
 
 void DOSBOX_RequestShutdown()

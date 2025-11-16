@@ -43,6 +43,10 @@
 #include "utils/rect.h"
 #include "utils/string_utils.h"
 
+#ifdef BOXER_INTEGRATED
+#include "boxer/boxer_hooks.h"
+#endif
+
 // must be included after dosbox_config.h
 #include <SDL.h>
 
@@ -893,10 +897,35 @@ static void update_viewport()
 	sdl.renderer->UpdateViewport(draw_rect_px);
 }
 
+#ifdef BOXER_INTEGRATED
+// Helper to convert Fraction to double for Boxer
+static double fraction_to_double(const Fraction& f)
+{
+	return static_cast<double>(f.numerator) / static_cast<double>(f.denominator);
+}
+#endif
+
 uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
                     const Fraction& render_pixel_aspect_ratio, const uint8_t flags,
                     const VideoMode& video_mode, GFX_Callback_t callback)
 {
+#ifdef BOXER_INTEGRATED
+	// INT-007: Notify Boxer of video mode/resolution change
+	// Boxer will reallocate frame buffers and update Metal textures
+	const auto pixel_aspect = fraction_to_double(render_pixel_aspect_ratio);
+
+	// Calculate scale factors from flags
+	const double scalex = (flags & GFX_DBL_W) ? 2.0 : 1.0;
+	const double scaley = (flags & GFX_DBL_H) ? 2.0 : 1.0;
+
+	const auto returned_flags = static_cast<uint8_t>(
+		BOXER_HOOK_VALUE(prepareForFrameSize, flags,
+		                 render_width_px, render_height_px, flags,
+		                 scalex, scaley, callback, pixel_aspect));
+
+	// Boxer controls the frame buffer, so we're always "ready"
+	return returned_flags;
+#else
 	if (!sdl.video_initialised) {
 		RENDER_SetShaderWithFallback();
 		sdl.video_initialised = true;
@@ -955,6 +984,7 @@ uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
 	}
 
 	return gfx_flags;
+#endif // BOXER_INTEGRATED
 }
 
 void GFX_CenterMouse()
@@ -1067,6 +1097,15 @@ static void toggle_fullscreen_handler(bool pressed)
 //
 bool GFX_StartUpdate(uint8_t*& pixels, int& pitch)
 {
+#ifdef BOXER_INTEGRATED
+	// INT-002: Get frame buffer from Boxer's Metal rendering infrastructure
+	// Boxer returns pointer to its BXVideoFrame buffer for DOSBox to draw into
+	if (BOXER_HOOK_BOOL(startFrame, &pixels, &pitch)) {
+		sdl.draw.updating_framebuffer = true;
+		return true;
+	}
+	return false;
+#else
 	if (!sdl.draw.active || sdl.draw.updating_framebuffer) {
 		return false;
 	}
@@ -1075,10 +1114,22 @@ bool GFX_StartUpdate(uint8_t*& pixels, int& pitch)
 
 	sdl.draw.updating_framebuffer = true;
 	return true;
+#endif // BOXER_INTEGRATED
 }
 
 void GFX_EndUpdate()
 {
+#ifdef BOXER_INTEGRATED
+	// INT-003: Notify Boxer that frame rendering is complete
+	// Boxer will mark dirty regions and schedule Metal texture upload
+	if (sdl.draw.updating_framebuffer) {
+		// Pass nullptr for changedLines - Boxer will assume full frame update
+		// (DOSBox Staging's dirty tracking is in RENDER layer, not GFX layer)
+		BOXER_HOOK_VOID(finishFrame, nullptr);
+		sdl.draw.updating_framebuffer = false;
+	}
+	// Boxer handles presentation asynchronously via Metal view
+#else
 	if (sdl.draw.updating_framebuffer) {
 		// `sdl.draw.updating_framebuffer` is true when the contents of
 		// the framebuffer has been changed in the current frame.
@@ -1133,11 +1184,18 @@ void GFX_EndUpdate()
 	sdl.draw.updating_framebuffer = false;
 
 	FrameMark;
+#endif // BOXER_INTEGRATED
 }
 
 uint32_t GFX_MakePixel(const uint8_t red, const uint8_t green, const uint8_t blue)
 {
+#ifdef BOXER_INTEGRATED
+	// INT-008: Convert RGB to Boxer's native pixel format (BGRA32)
+	return static_cast<uint32_t>(
+		BOXER_HOOK_VALUE(getRGBPaletteEntry, 0u, red, green, blue));
+#else
 	return sdl.renderer->MakePixel(red, green, blue);
+#endif // BOXER_INTEGRATED
 }
 
 void GFX_Start()
@@ -2513,6 +2571,13 @@ void GFX_MaybePresentFrame()
 //   false - event loop wants to quit
 bool GFX_PollAndHandleEvents()
 {
+#ifdef BOXER_INTEGRATED
+	// INT-001: Let Boxer handle events via its NSApplication event loop
+	// Boxer will process macOS events and forward relevant ones to DOSBox
+	// (keyboard, mouse, etc.) via existing input mechanisms
+	return BOXER_HOOK_BOOL(processEvents);
+#else
+	// Standard SDL event processing
 	SDL_Event event;
 
 	static auto last_check_joystick = GetTicks();
@@ -2573,6 +2638,7 @@ bool GFX_PollAndHandleEvents()
 		}
 	}
 	return !DOSBOX_IsShutdownRequested();
+#endif // BOXER_INTEGRATED
 }
 
 static std::vector<std::string> get_sdl_texture_renderers()

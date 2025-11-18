@@ -70,21 +70,10 @@ typedef ptrdiff_t Bits;
 // Graphics Callback Types
 // ============================================================================
 
-// Graphics callback function types
-// These match DOSBox Staging's GFX callback interface (src/gui/private/common.h)
-// but are redefined here to avoid exposing internal DOSBox headers to Boxer
-
-// Callback function identifiers for graphics lifecycle events
-typedef enum {
-	Boxer_GFX_CallbackReset,   // Reset graphics state
-	Boxer_GFX_CallbackStop,    // Stop rendering
-	Boxer_GFX_CallbackRedraw   // Request full redraw
-} Boxer_GFX_CallbackFunctions_t;
-
 // Graphics callback function pointer type
-// Boxer uses this to receive notifications about rendering lifecycle events
-// Note: Named Boxer_GFX_CallBack_t to avoid conflict with internal DOSBox GFX_CallBack_t
-typedef void (*Boxer_GFX_CallBack_t)(Boxer_GFX_CallbackFunctions_t function);
+// Used by GFX_SetSize to notify when frame dimensions change
+// Note: Named Boxer_GFX_CallBack_t to avoid conflict with legacy DOSBox GFX_CallBack_t
+typedef void (*Boxer_GFX_CallBack_t)(Bitu width, Bitu height);
 
 // ============================================================================
 // File I/O Types

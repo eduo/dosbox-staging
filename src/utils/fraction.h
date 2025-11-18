@@ -149,7 +149,7 @@ public:
 		return {num * that.denom, denom * that.num};
 	}
 
-private:
+public:
 	int64_t num   = 0;
 	int64_t denom = 1;
 };

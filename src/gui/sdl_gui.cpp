@@ -901,7 +901,7 @@ static void update_viewport()
 // Helper to convert Fraction to double for Boxer
 static double fraction_to_double(const Fraction& f)
 {
-	return static_cast<double>(f.numerator) / static_cast<double>(f.denominator);
+	return static_cast<double>(f.num) / static_cast<double>(f.denom);
 }
 #endif
 
@@ -1110,7 +1110,7 @@ bool GFX_StartUpdate(uint8_t*& pixels, int& pitch)
 		LOG_MSG("BOXER_DEBUG: GFX_StartUpdate called, g_boxer_delegate = %p", (void*)g_boxer_delegate);
 		once = true;
 	}
-	if (BOXER_HOOK_BOOL(startFrame, &pixels, &pitch)) {
+	if (BOXER_HOOK_BOOL(startFrame, &pixels, pitch)) {
 		sdl.draw.updating_framebuffer = true;
 		return true;
 	}

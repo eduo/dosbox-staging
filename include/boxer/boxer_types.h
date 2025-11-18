@@ -72,7 +72,8 @@ typedef ptrdiff_t Bits;
 
 // Graphics callback function pointer type
 // Used by GFX_SetSize to notify when frame dimensions change
-typedef void (*GFX_CallBack_t)(Bitu width, Bitu height);
+// Note: Named Boxer_GFX_CallBack_t to avoid conflict with legacy DOSBox GFX_CallBack_t
+typedef void (*Boxer_GFX_CallBack_t)(Bitu width, Bitu height);
 
 // ============================================================================
 // File I/O Types

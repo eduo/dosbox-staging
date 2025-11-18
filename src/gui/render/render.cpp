@@ -481,6 +481,9 @@ static void render_callback(GFX_CallbackFunctions_t function)
 
 void RENDER_SetSize(const ImageInfo& image_info, const double frames_per_second)
 {
+	LOG_MSG("BOXER_DEBUG: RENDER_SetSize called: %dx%d format=%d",
+	        image_info.width, image_info.height, (int)image_info.pixel_format);
+
 	halt_render();
 
 	if (image_info.width == 0 || image_info.height == 0 ||

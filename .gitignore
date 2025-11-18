@@ -97,3 +97,4 @@ cmake-build-*/
 build-staging
 output/dist
 dosbox-universal
+build-boxer

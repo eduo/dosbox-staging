@@ -10,7 +10,7 @@
 
 // Minimum 5-char long Git hash of the build; can be longer to guarantee
 // uniqueness (e.g., da3c5, c22ef8)
-#define BUILD_GIT_HASH "e2817"
+#define BUILD_GIT_HASH "37e80"
 
 
 // Operating System

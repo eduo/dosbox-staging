@@ -404,6 +404,7 @@ if(BOXER_INTEGRATED)
   # Build as STATIC library instead of executable
   # Boxer will link this into its macOS application
   add_library(dosbox STATIC src/main.cpp src/dosbox.cpp)
+target_compile_definitions(dosbox PRIVATE BOXER_INTEGRATED)
 
   # Boxer-specific source files
   target_sources(dosbox PRIVATE
@@ -473,6 +474,10 @@ include_directories(
 
 add_library(libdosboxcommon STATIC)
 
+# Ensure BOXER_INTEGRATED is defined for all compilation units when building for Boxer
+if(BOXER_INTEGRATED)
+  target_compile_definitions(libdosboxcommon PUBLIC BOXER_INTEGRATED)
+endif()
 
 # Add tests before src so that the dosbox_tests target is
 # available for target_sources()

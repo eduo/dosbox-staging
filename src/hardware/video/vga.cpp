@@ -50,6 +50,8 @@ void VGA_SetModeNow(VGAModes mode) {
 
 
 void VGA_SetMode(VGAModes mode) {
+	LOG_MSG("BOXER_DEBUG: VGA_SetMode called: mode=%d (current mode=%d)", (int)mode, (int)vga.mode);
+
 	if (vga.mode == mode) return;
 	vga.mode=mode;
 	VGA_SetupHandlers();

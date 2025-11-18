@@ -423,21 +423,39 @@ static bool is_shutdown_requested = false;
 
 void DOSBOX_RunMachine()
 {
+	LOG_MSG("BOXER_DEBUG: ========== DOSBOX_RunMachine() ENTERED ==========");
+	LOG_MSG("BOXER_DEBUG: loop function pointer = %p", (void*)loop);
+	LOG_MSG("BOXER_DEBUG: is_shutdown_requested = %d", is_shutdown_requested);
+
 #ifdef BOXER_INTEGRATED
 	// Lifecycle hook: Boxer initializes resources before emulation begins
 	// (e.g., Metal rendering contexts, CoreAudio buffers, input devices)
+	LOG_MSG("BOXER_DEBUG: About to call runLoopWillStart hook");
 	BOXER_HOOK_VOID(runLoopWillStartWithContextInfo, nullptr);
+	LOG_MSG("BOXER_DEBUG: runLoopWillStart hook completed");
 #endif
 
-	while ((*loop)() == 0 && !is_shutdown_requested)
-		;
+	LOG_MSG("BOXER_DEBUG: Entering emulation loop...");
+	int loop_count = 0;
+	while ((*loop)() == 0 && !is_shutdown_requested) {
+		if (loop_count < 5 || loop_count % 1000 == 0) {
+			LOG_MSG("BOXER_DEBUG: Loop iteration %d", loop_count);
+		}
+		loop_count++;
+	}
+	LOG_MSG("BOXER_DEBUG: Exited emulation loop after %d iterations", loop_count);
+	LOG_MSG("BOXER_DEBUG: is_shutdown_requested = %d", is_shutdown_requested);
 
 #ifdef BOXER_INTEGRATED
 	// Lifecycle hook: Boxer cleans up resources after emulation ends
 	// Called in all exit paths: normal exit, exception, or emergency abort
 	// (e.g., save game state, release resources, update UI)
+	LOG_MSG("BOXER_DEBUG: About to call runLoopDidFinish hook");
 	BOXER_HOOK_VOID(runLoopDidFinishWithContextInfo, nullptr);
+	LOG_MSG("BOXER_DEBUG: runLoopDidFinish hook completed");
 #endif
+
+	LOG_MSG("BOXER_DEBUG: ========== DOSBOX_RunMachine() EXITING ==========");
 }
 
 void DOSBOX_RequestShutdown()

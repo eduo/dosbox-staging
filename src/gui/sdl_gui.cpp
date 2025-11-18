@@ -918,10 +918,15 @@ uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
 	const double scalex = (flags & GFX_DBL_W) ? 2.0 : 1.0;
 	const double scaley = (flags & GFX_DBL_H) ? 2.0 : 1.0;
 
+	LOG_MSG("BOXER_DEBUG: Calling prepareForFrameSize hook, g_boxer_delegate = %p", (void*)g_boxer_delegate);
 	const auto returned_flags = static_cast<uint8_t>(
 		BOXER_HOOK_VALUE(prepareForFrameSize, flags,
 		                 render_width_px, render_height_px, flags,
 		                 scalex, scaley, callback, pixel_aspect));
+
+	// Activate rendering - critical for enabling frame updates
+	// This sets sdl.draw.active = true, which gates all rendering calls
+	GFX_Start();
 
 	// Boxer controls the frame buffer, so we're always "ready"
 	return returned_flags;
@@ -1100,6 +1105,11 @@ bool GFX_StartUpdate(uint8_t*& pixels, int& pitch)
 #ifdef BOXER_INTEGRATED
 	// INT-002: Get frame buffer from Boxer's Metal rendering infrastructure
 	// Boxer returns pointer to its BXVideoFrame buffer for DOSBox to draw into
+	static bool once = false;
+	if (!once) {
+		LOG_MSG("BOXER_DEBUG: GFX_StartUpdate called, g_boxer_delegate = %p", (void*)g_boxer_delegate);
+		once = true;
+	}
 	if (BOXER_HOOK_BOOL(startFrame, &pixels, &pitch)) {
 		sdl.draw.updating_framebuffer = true;
 		return true;

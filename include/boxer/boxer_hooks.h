@@ -167,7 +167,7 @@ public:
      */
     virtual Bitu prepareForFrameSize(Bitu width, Bitu height, Bitu gfx_flags,
                                      double scalex, double scaley,
-                                     GFX_CallBack_t callback,
+                                     Boxer_GFX_CallBack_t callback,
                                      double pixel_aspect) = 0;
 
     /**

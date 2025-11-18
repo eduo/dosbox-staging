@@ -903,19 +903,6 @@ static double fraction_to_double(const Fraction& f)
 {
 	return static_cast<double>(f.num) / static_cast<double>(f.denom);
 }
-
-// Wrapper to convert DOSBox Staging callback to Boxer callback
-// The callback enums have matching values, so we just need type conversion
-static GFX_Callback_t g_stored_dosbox_callback = nullptr;
-
-static void boxer_callback_wrapper(Boxer_GFX_CallbackFunctions_t function)
-{
-	if (g_stored_dosbox_callback) {
-		// Convert Boxer callback enum to DOSBox Staging enum
-		// Values are identical: Reset=0, Stop=1, Redraw=2
-		g_stored_dosbox_callback(static_cast<GFX_CallbackFunctions_t>(function));
-	}
-}
 #endif
 
 uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
@@ -932,13 +919,10 @@ uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
 	const double scaley = (flags & GFX_DBL_H) ? 2.0 : 1.0;
 
 	LOG_MSG("BOXER_DEBUG: Calling prepareForFrameSize hook, g_boxer_delegate = %p", (void*)g_boxer_delegate);
-	// Store DOSBox callback and pass wrapper to Boxer
-	// Boxer will call the wrapper which translates enum values back to DOSBox types
-	g_stored_dosbox_callback = callback;
 	const auto returned_flags = static_cast<uint8_t>(
 		BOXER_HOOK_VALUE(prepareForFrameSize, flags,
 		                 render_width_px, render_height_px, flags,
-		                 scalex, scaley, boxer_callback_wrapper, pixel_aspect));
+		                 scalex, scaley, callback, pixel_aspect));
 
 	// Activate rendering - critical for enabling frame updates
 	// This sets sdl.draw.active = true, which gates all rendering calls

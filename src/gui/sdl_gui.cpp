@@ -897,14 +897,6 @@ static void update_viewport()
 	sdl.renderer->UpdateViewport(draw_rect_px);
 }
 
-#ifdef BOXER_INTEGRATED
-// Helper to convert Fraction to double for Boxer
-static double fraction_to_double(const Fraction& f)
-{
-	return static_cast<double>(f.num) / static_cast<double>(f.denom);
-}
-#endif
-
 uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
                     const Fraction& render_pixel_aspect_ratio, const uint8_t flags,
                     const VideoMode& video_mode, GFX_Callback_t callback)
@@ -912,7 +904,7 @@ uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
 #ifdef BOXER_INTEGRATED
 	// INT-007: Notify Boxer of video mode/resolution change
 	// Boxer will reallocate frame buffers and update Metal textures
-	const auto pixel_aspect = fraction_to_double(render_pixel_aspect_ratio);
+	const auto pixel_aspect = render_pixel_aspect_ratio.ToDouble();
 
 	// Calculate scale factors from flags
 	const double scalex = (flags & GFX_DBL_W) ? 2.0 : 1.0;
@@ -922,7 +914,7 @@ uint8_t GFX_SetSize(const int render_width_px, const int render_height_px,
 	const auto returned_flags = static_cast<uint8_t>(
 		BOXER_HOOK_VALUE(prepareForFrameSize, flags,
 		                 render_width_px, render_height_px, flags,
-		                 scalex, scaley, callback, pixel_aspect));
+		                 scalex, scaley, nullptr, pixel_aspect));
 
 	// Activate rendering - critical for enabling frame updates
 	// This sets sdl.draw.active = true, which gates all rendering calls

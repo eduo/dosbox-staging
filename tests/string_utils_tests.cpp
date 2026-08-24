@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -144,5 +144,125 @@ TEST(SafeStrlen, FixedSize)
 	char buffer[N] = "1234";
 	EXPECT_EQ(N - 1, safe_strlen(buffer));
 }
+
+TEST(Split_delit, NoBoundingDelims)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("a:/b:/c/d:/e/f/", ':'), expected);
+	EXPECT_EQ(split("a /b /c/d /e/f/", ' '), expected);
+	EXPECT_EQ(split("abc", 'x'), std::vector<std::string>{"abc"});
+}
+
+TEST(Split_delim, DelimAtStartNotEnd)
+{
+	const std::vector<std::string> expected({"", "a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split(":a:/b:/c/d:/e/f/", ':'), expected);
+	EXPECT_EQ(split(" a /b /c/d /e/f/", ' '), expected);
+}
+
+TEST(Split_delim, DelimAtEndNotStart)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/", ""});
+	EXPECT_EQ(split("a:/b:/c/d:/e/f/:", ':'), expected);
+	EXPECT_EQ(split("a /b /c/d /e/f/ ", ' '), expected);
+}
+
+TEST(Split_delim, DelimsAtBoth)
+{
+	const std::vector<std::string> expected({"", "a", "/b", "/c/d", "/e/f/", ""});
+	EXPECT_EQ(split(":a:/b:/c/d:/e/f/:", ':'), expected);
+	EXPECT_EQ(split(" a /b /c/d /e/f/ ", ' '), expected);
+}
+
+TEST(Split_delim, MultiInternalDelims)
+{
+	const std::vector<std::string> expected(
+	        {"a", "/b", "", "/c/d", "", "", "/e/f/"});
+	EXPECT_EQ(split("a:/b::/c/d:::/e/f/", ':'), expected);
+	EXPECT_EQ(split("a /b  /c/d   /e/f/", ' '), expected);
+}
+
+TEST(Split_delim, MultiBoundingDelims)
+{
+	const std::vector<std::string> expected(
+	        {"", "", "a", "/b", "/c/d", "/e/f/", "", "", ""});
+	EXPECT_EQ(split("::a:/b:/c/d:/e/f/:::", ':'), expected);
+	EXPECT_EQ(split("  a /b /c/d /e/f/   ", ' '), expected);
+}
+
+TEST(Split_delim, MixedDelims)
+{
+	const std::vector<std::string> expected(
+	        {"", "", "a", "/b", "", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("::a:/b::/c/d:/e/f/", ':'), expected);
+	EXPECT_EQ(split("  a /b  /c/d /e/f/", ' '), expected);
+}
+
+TEST(Split_delim, Empty)
+{
+	const std::vector<std::string> empty;
+	const std::vector<std::string> two({"", ""});
+	const std::vector<std::string> three({"", "", ""});
+
+	EXPECT_EQ(split("", ':'), empty);
+	EXPECT_EQ(split(":", ':'), two);
+	EXPECT_EQ(split("::", ':'), three);
+	EXPECT_EQ(split("", ' '), empty);
+	EXPECT_EQ(split(" ", ' '), two);
+	EXPECT_EQ(split("  ", ' '), three);
+}
+ 
+TEST(Split, NoBoundingWhitespace)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("a /b /c/d /e/f/"), expected);
+	EXPECT_EQ(split("abc"), std::vector<std::string>{"abc"});
+}
+TEST(Split, WhitespaceAtStartNotEnd)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split(" a /b /c/d /e/f/"), expected);
+}
+
+TEST(Split, WhitespaceAtEndNotStart)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("a /b /c/d /e/f/ "), expected);
+}
+
+TEST(Split, WhitespaceAtBoth)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split(" a /b /c/d /e/f/ "), expected);
+}
+
+TEST(Split, MultiInternalWhitespace)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("a /b  /c/d   /e/f/"), expected);
+}
+
+TEST(Split, MultiBoundingWhitespace)
+{
+	const std::vector<std::string> expected({"a", "/b", "/c/d", "/e/f/"});
+	EXPECT_EQ(split("  a /b /c/d /e/f/   "), expected);
+}
+
+TEST(Split, MixedWhitespace)
+{
+	const std::vector<std::string> expected({"a", "b", "c"});
+	EXPECT_EQ(split("\t\na\f\vb\rc"), expected);
+	EXPECT_EQ(split("a\tb\f\vc"), expected);
+	EXPECT_EQ(split(" a \n \v \r b \f \r c "), expected);
+}
+
+TEST(Split, Empty)
+{
+	const std::vector<std::string> empty;
+	EXPECT_EQ(split(""), empty);
+	EXPECT_EQ(split(" "), empty);
+	EXPECT_EQ(split("   "), empty);
+}
+
 
 } // namespace

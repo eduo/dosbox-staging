@@ -34,27 +34,34 @@
 #include "debug.h"
 #include "debug_inc.h"
 
+#if !PDCURSES
+#error SYSTEM CURSES INCLUDED, SHOULD BE PDCURSES
+#endif
+
 struct _LogGroup {
-	char const* front;
-	bool enabled;
+	char const *front = nullptr;
+	bool enabled = false;
 };
 #include <list>
 #include <string>
 using namespace std;
 
 #define MAX_LOG_BUFFER 500
-static list<string> logBuff;
+static list<string> logBuff = {};
 static list<string>::iterator logBuffPos = logBuff.end();
 
 static _LogGroup loggrp[LOG_MAX]={{"",true},{0,false}};
-static FILE* debuglog;
+static FILE *debuglog = nullptr;
 
 extern int old_cursor_state;
 
 
 
 void DEBUG_ShowMsg(char const* format,...) {
-	
+	// Quit early if the window hasn't been created yet
+	if (!dbg.win_out)
+		return;
+
 	char buf[512];
 	va_list msg;
 	va_start(msg,format);
@@ -86,9 +93,15 @@ void DEBUG_ShowMsg(char const* format,...) {
 	wrefresh(dbg.win_out);
 }
 
-void DEBUG_RefreshPage(char scroll) {
-	if (scroll==-1 && logBuffPos!=logBuff.begin()) logBuffPos--;
-	else if (scroll==1 && logBuffPos!=logBuff.end()) logBuffPos++;
+void DEBUG_RefreshPage(int scroll) {
+	// Quit early if the window hasn't been created yet
+	if (!dbg.win_out)
+		return;
+
+	if (scroll == -1 && logBuffPos != logBuff.begin())
+		logBuffPos--;
+	else if (scroll == 1 && logBuffPos != logBuff.end())
+		logBuffPos++;
 
 	list<string>::iterator i = logBuffPos;
 	int maxy, maxx; getmaxyx(dbg.win_out,maxy,maxx);
@@ -117,11 +130,15 @@ void LOG::operator() (char const* format, ...){
 
 	if (d_type>=LOG_MAX) return;
 	if ((d_severity!=LOG_ERROR) && (!loggrp[d_type].enabled)) return;
-	DEBUG_ShowMsg("%10u: %s:%s\n",static_cast<Bit32u>(cycle_count),loggrp[d_type].front,buf);
+	DEBUG_ShowMsg("%10u: %s:%s\n",static_cast<uint32_t>(cycle_count),loggrp[d_type].front,buf);
 }
 
 
 static void Draw_RegisterLayout(void) {
+	// Quit early if the window hasn't been created yet
+	if (!dbg.win_reg)
+		return;
+
 	mvwaddstr(dbg.win_reg,0,0,"EAX=");
 	mvwaddstr(dbg.win_reg,1,0,"EBX=");
 	mvwaddstr(dbg.win_reg,2,0,"ECX=");
@@ -195,7 +212,7 @@ static void MakeSubWindows(void) {
 	refresh();
 }
 
-static void MakePairs(void) {
+static void MakePairs() {
 	init_pair(PAIR_BLACK_BLUE, COLOR_BLACK, COLOR_CYAN);
 	init_pair(PAIR_BYELLOW_BLACK, COLOR_YELLOW /*| FOREGROUND_INTENSITY */, COLOR_BLACK);
 	init_pair(PAIR_GREEN_BLACK, COLOR_GREEN /*| FOREGROUND_INTENSITY */, COLOR_BLACK);
@@ -276,20 +293,16 @@ void LOG_StartUp(void) {
 
 void DBGUI_StartUp(void) {
 	/* Start the main window */
-	dbg.win_main=initscr();
+	dbg.win_main = initscr();
 	cbreak();       /* take input chars one at a time, no wait for \n */
 	noecho();       /* don't echo input */
-	nodelay(dbg.win_main,true);
-	keypad(dbg.win_main,true);
-	#ifndef WIN32
-	printf("\033[8;50;80t");
-	fflush(NULL);
-	resizeterm(50,80);
+	nodelay(dbg.win_main, true);
+	keypad(dbg.win_main, true);
+	resize_term(50, 80);
 	touchwin(dbg.win_main);
-	#endif
 	old_cursor_state = curs_set(0);
 	start_color();
-	cycle_count=0;
+	cycle_count = 0;
 	MakePairs();
 	MakeSubWindows();
 

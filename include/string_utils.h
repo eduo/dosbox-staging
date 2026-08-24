@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <string>
+#include <vector>
 
 template <size_t N>
 int safe_sprintf(char (&dst)[N], const char *fmt, ...)
@@ -119,11 +120,11 @@ template <typename T, typename INDEX_T>
 void terminate_str_at(T *str, INDEX_T i) noexcept
 {
 	// Check that we're only operating on bona-fide C strings
-	static_assert(std::is_same<T, char>::value || std::is_same<T, wchar_t>::value,
+	static_assert(std::is_same_v<T, char> || std::is_same_v<T, wchar_t>,
 	              "Can only reset a *char or *wchar_t with the string-terminator");
 
 	// Check that we don't underflow with a negative index
-	assert(std::is_unsigned<INDEX_T>::value || i >= 0);
+	assert(std::is_unsigned_v<INDEX_T> || i >= 0);
 
 	// Check that we don't dereferrence a null pointer
 	assert(str != nullptr);
@@ -136,5 +137,56 @@ void reset_str(T *str) noexcept
 {
 	terminate_str_at(str, 0);
 }
+
+bool is_hex_digits(const std::string_view s) noexcept;
+
+bool is_digits(const std::string_view s) noexcept;
+
+void strreplace(char *str, char o, char n);
+char *ltrim(char *str);
+char *rtrim(char *str);
+char *trim(char *str);
+char *upcase(char *str);
+char *lowcase(char *str);
+
+inline bool is_empty(const char *str) noexcept
+{
+	return str[0] == '\0';
+}
+
+char *strip_word(char *&cmd);
+
+std::string replace(const std::string &str, char old_char, char new_char) noexcept;
+void trim(std::string &str, const char trim_chars[] = " \r\t\f\n");
+void upcase(std::string &str);
+void lowcase(std::string &str);
+void strip_punctuation(std::string &str);
+
+// Split a string on an arbitrary character delimiter. Absent string content on
+// either side of a delimiter is treated as an empty string. For example:
+//   split("abc:", ':') returns {"abc", ""}
+//   split(":def", ':') returns {"", "def"}
+//   split(":", ':') returns {"", ""}
+//   split("::", ':') returns {"", "", ""}
+std::vector<std::string> split(const std::string &seq, const char delim);
+
+// Split a string on whitespace, where whitespace can be any of the following:
+// ' '    (0x20)  space (SPC)
+// '\t'   (0x09)  horizontal tab (TAB)
+// '\n'   (0x0a)  newline (LF)
+// '\v'   (0x0b)  vertical tab (VT)
+// '\f'   (0x0c)  feed (FF)
+// '\r'   (0x0d)  carriage return (CR)
+// Absent string content on either side of a delimiter is omitted. For example:
+//   split("abc") returns {"abc"}
+//   split("  a   b   c  ") returns {"a", "b", "c"}
+//   split("\t \n abc \r \v def \f \v ") returns {"abc", "def"}
+//   split("a\tb\nc\vd e\rf") returns {"a", "b", "c", "d", "e", "f"}
+//   split("  ") returns {}
+//   split(" ") returns {}
+std::vector<std::string> split(const std::string &seq);
+
+// Clear the language if it's set to the POSIX default
+void clear_language_if_default(std::string &language);
 
 #endif

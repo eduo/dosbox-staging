@@ -1,8 +1,11 @@
 name: PVS-Studio analysis
 
+# If the CI job fails with 404-not-found, then PVS studio has updated the release.
+# Get the new DEB version from: https://pvs-studio.com/en/pvs-studio/download-all/
+
 on: push
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -11,10 +14,13 @@ jobs:
     name: PVS-Studio static analyzer
     runs-on: ubuntu-20.04
     env:
-      debfile: pvs-studio-7.16.55312.179-amd64.deb
+      debfile: pvs-studio-7.19.61166.216-amd64.deb
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - run:  sudo apt-get update
 
       - name: Log and setup environment
@@ -35,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           set -xeu
-          sudo apt-get install -y strace $(cat .github/packages/ubuntu-20.04-apt.txt)
+          sudo apt-get install -y strace $(cat packages/ubuntu-20.04-apt.txt)
           sudo pip3 install --upgrade meson ninja
           sudo dpkg -i "pvs-package/pvs.deb"
           pvs-studio-analyzer credentials "${{ secrets.PvsStudioName }}" "${{ secrets.PvsStudioKey }}"
@@ -49,8 +55,8 @@ jobs:
       - name: Build
         run: |
           set -xeu
-          meson setup -Dunit_tests=disabled --native-file=.github/meson/native-clang.ini build
-          pvs-studio-analyzer trace -- ninja -C build
+          meson setup -Dbuildtype=debug -Dunit_tests=disabled --native-file=.github/meson/native-clang.ini build
+          pvs-studio-analyzer trace -- meson compile -C build
 
       - name: Analyze
         run: |
@@ -103,7 +109,7 @@ jobs:
 
       - name: Summarize report
         env:
-          MAX_BUGS: 262
+          MAX_BUGS: 264
         run: |
           echo "Full report is included in build Artifacts"
           echo

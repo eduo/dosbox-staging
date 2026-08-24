@@ -24,9 +24,9 @@
 #include <stdio.h>
 
 class Section;
-enum OPL_Mode {
-	OPL_none,OPL_cms,OPL_opl2,OPL_dualopl2,OPL_opl3,OPL_opl3gold
-};
+
+enum class OplMode { None, Cms, Opl2, DualOpl2, Opl3, Opl3Gold };
+
 #define CAPTURE_WAVE	0x01
 #define CAPTURE_OPL		0x02
 #define CAPTURE_MIDI	0x04
@@ -35,19 +35,19 @@ enum OPL_Mode {
 
 extern Bitu CaptureState;
 
-void OPL_Init(Section* sec,OPL_Mode mode);
-void CMS_Init(Section* sec);
-void OPL_ShutDown(Section* sec);
-void CMS_ShutDown(Section* sec);
+void OPL_Init(Section *sec, OplMode mode);
+void CMS_Init(Section *sec);
+void OPL_ShutDown();
+void CMS_ShutDown();
 
 bool PS1AUDIO_IsEnabled();
 bool SB_Get_Address(uint16_t &sbaddr, uint8_t &sbirq, uint8_t &sbdma);
 bool TS_Get_Address(Bitu& tsaddr, Bitu& tsirq, Bitu& tsdma);
 
-extern Bit8u adlib_commandreg;
+extern uint8_t adlib_commandreg;
 FILE * OpenCaptureFile(const char * type,const char * ext);
 
-void CAPTURE_AddWave(Bit32u freq, Bit32u len, Bit16s * data);
+void CAPTURE_AddWave(uint32_t freq, uint32_t len, int16_t * data);
 
 #define CAPTURE_FLAG_DBLW	0x1
 #define CAPTURE_FLAG_DBLH	0x2
@@ -60,7 +60,7 @@ void CAPTURE_AddImage(int width,
                       uint8_t *data,
                       uint8_t *pal);
 
-void CAPTURE_AddMidi(bool sysex, Bitu len, Bit8u * data);
+void CAPTURE_AddMidi(bool sysex, Bitu len, uint8_t * data);
 void CAPTURE_VideoStart();
 void CAPTURE_VideoStop();
 

@@ -16,9 +16,10 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-
 #include "dosbox.h"
 #include "keyboard.h"
+
+#include "bitops.h"
 #include "inout.h"
 #include "pic.h"
 #include "mem.h"
@@ -26,12 +27,10 @@
 #include "timer.h"
 #include "support.h"
 
-//--Added 2012-02-24 by Alun Bestor to give Boxer more hooks into keyboard behaviour
-#import "BXCoalface.h"
-//--End of modifications
-
 #define KEYBUFSIZE 32
 #define KEYDELAY   0.300 // Considering 20-30 khz serial clock and 11 bits/char
+
+using namespace bit::literals;
 
 enum KeyCommands {
 	CMD_NONE,
@@ -41,7 +40,7 @@ enum KeyCommands {
 };
 
 static struct {
-	Bit8u buffer[KEYBUFSIZE];
+	uint8_t buffer[KEYBUFSIZE];
 	Bitu used;
 	Bitu pos;
 	struct {
@@ -50,14 +49,14 @@ static struct {
 		Bitu pause,rate;
 	} repeat;
 	KeyCommands command;
-	Bit8u p60data;
+	uint8_t p60data;
 	bool p60changed;
 	bool active;
 	bool scanning;
 	bool scheduled;
 } keyb;
 
-static void KEYBOARD_SetPort60(Bit8u val) {
+static void KEYBOARD_SetPort60(uint8_t val) {
 	keyb.p60changed=true;
 	keyb.p60data=val;
 	if (machine==MCH_PCJR) PIC_ActivateIRQ(6);
@@ -76,12 +75,6 @@ static void KEYBOARD_TransferBuffer(uint32_t /*val*/)
 	keyb.used--;
 }
 
-Bitu boxer_keyboardBufferRemaining()
-{
-    if (keyb.used >= KEYBUFSIZE) return 0;
-    else return KEYBUFSIZE - keyb.used;
-}
-
 void KEYBOARD_ClrBuffer(void) {
 	keyb.used=0;
 	keyb.pos=0;
@@ -89,7 +82,12 @@ void KEYBOARD_ClrBuffer(void) {
 	keyb.scheduled=false;
 }
 
-static void KEYBOARD_AddBuffer(Bit8u data) {
+Bitu boxer_keyboardBufferRemaining()
+{
+	return keyb.used >= KEYBUFSIZE ? 0 : KEYBUFSIZE - keyb.used;
+}
+
+static void KEYBOARD_AddBuffer(uint8_t data) {
 	if (keyb.used>=KEYBUFSIZE) {
 		LOG(LOG_KEYBOARD,LOG_NORMAL)("Buffer full, dropping code");
 		return;
@@ -183,33 +181,101 @@ static void write_p60(io_port_t, io_val_t value, io_width_t)
 	}
 }
 
-extern bool TIMER_GetOutput2(void);
-static Bit8u port_61_data = 0;
-static uint8_t read_p61(io_port_t, io_width_t)
-{
-	if (TIMER_GetOutput2())
-		port_61_data |= 0x20;
-	else
-		port_61_data &= ~0x20;
-	port_61_data ^= 0x10;
-	return port_61_data;
-}
+/* Bochs: 8255 Programmable Peripheral Interface
 
+0061	w	KB controller port B (ISA, EISA)   (PS/2 port A is at 0092)
+system control port for compatibility with 8255
+bit 7      (1= IRQ 0 reset )
+bit 6-4    reserved
+bit 3 = 1  channel check enable
+bit 2 = 1  parity check enable
+bit 1 = 1  speaker data enable
+bit 0 = 1  timer 2 gate to speaker enable
+
+0061	w	PPI  Programmable Peripheral Interface 8255 (XT only)
+system control port
+bit 7 = 1  clear keyboard
+bit 6 = 0  hold keyboard clock low
+bit 5 = 0  I/O check enable
+bit 4 = 0  RAM parity check enable
+bit 3 = 0  read low switches
+bit 2      reserved, often used as turbo switch
+bit 1 = 1  speaker data enable
+bit 0 = 1  timer 2 gate to speaker enable
+*/
+static PpiPortB port_b = {0};
 extern void TIMER_SetGate2(bool);
 static void write_p61(io_port_t, io_val_t value, io_width_t)
 {
-	const auto val = check_cast<uint8_t>(value);
-	if ((port_61_data ^ val) & 3) {
-		if ((port_61_data ^ val) & 1) TIMER_SetGate2(val&0x1);
-		PCSPEAKER_SetType(val & 3);
-	}
-	port_61_data = val;
+	const PpiPortB new_port_b = {check_cast<uint8_t>(value)};
+
+	// Determine how the state changed
+	const auto output_changed = new_port_b.timer2_gating_and_speaker_out !=
+	                            port_b.timer2_gating_and_speaker_out;
+	const auto timer_changed = new_port_b.timer2_gating != port_b.timer2_gating;
+
+	// Update the state
+	port_b.data = new_port_b.data;
+
+	if (machine < MCH_EGA && port_b.xt_clear_keyboard)
+		KEYBOARD_ClrBuffer();
+
+	if (!output_changed)
+		return;
+
+	if (timer_changed)
+		TIMER_SetGate2(port_b.timer2_gating);
+
+	PCSPEAKER_SetType(port_b);
 }
 
+/* Bochs: 8255 Programmable Peripheral Interface
+
+0061	r	KB controller port B control register (ISA, EISA)
+system control port for compatibility with 8255
+bit 7    parity check occurred
+bit 6    channel check occurred
+bit 5    mirrors timer 2 output condition
+bit 4    toggles with each refresh request
+bit 3    channel check status
+bit 2    parity check status
+bit 1    speaker data status
+bit 0    timer 2 gate to speaker status
+*/
+extern bool TIMER_GetOutput2(void);
+static uint8_t read_p61(io_port_t, io_width_t)
+{
+	// Bit 4 must be toggled each request
+	port_b.read_toggle.flip();
+
+	// On PC/AT systems, bit 5 sets the timer 2 output status
+	if (is_machine(MCH_EGA | MCH_VGA))
+		port_b.timer2_gating_alias = TIMER_GetOutput2();
+	else
+		// On XT systems always toggle bit 5 (Spellicopter CGA)
+		port_b.xt_read_toggle.flip();
+
+	return port_b.data;
+}
+
+/* Bochs: 8255 Programmable Peripheral Interface
+0062	r/w	PPI (XT only)
+bit 7 = 1  RAM parity check
+bit 6 = 1  I/O channel check
+bit 5 = 1  timer 2 channel out
+bit 4      reserved
+bit 3 = 1  system board RAM size type 1
+bit 2 = 1  system board RAM size type 2
+bit 1 = 1  coprocessor installed
+bit 0 = 1  loop in POST
+*/
 static uint8_t read_p62(io_port_t, io_width_t)
 {
-	Bit8u ret = ~0x20;
-	if (TIMER_GetOutput2()) ret |= 0x20;
+	auto ret = bit::all<uint8_t>();
+
+	if(!TIMER_GetOutput2())
+		bit::clear(ret, b5);
+
 	return ret;
 }
 
@@ -243,12 +309,12 @@ static void write_p64(io_port_t, io_val_t value, io_width_t)
 
 static uint8_t read_p64(io_port_t, io_width_t)
 {
-	Bit8u status = 0x1c | (keyb.p60changed ? 0x1 : 0x0);
+	uint8_t status = 0x1c | (keyb.p60changed ? 0x1 : 0x0);
 	return status;
 }
 
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
-	Bit8u ret=0;bool extend=false;
+	uint8_t ret=0;bool extend=false;
 	switch (keytype) {
 	case KBD_esc:ret=1;break;
 	case KBD_1:ret=2;break;

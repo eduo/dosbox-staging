@@ -38,20 +38,17 @@
 
 #include <limits.h>
 
-#ifndef PAGESIZE
-#define PAGESIZE 4096
-#endif
-
 #endif // HAVE_MPROTECT
 
 #include "callback.h"
-#include "regs.h"
-#include "mem.h"
 #include "cpu.h"
 #include "debug.h"
-#include "paging.h"
-#include "inout.h"
 #include "fpu.h"
+#include "inout.h"
+#include "mem.h"
+#include "paging.h"
+#include "regs.h"
+#include "tracy.h"
 
 #define CACHE_MAXSIZE	(4096*3)
 #define CACHE_TOTAL		(1024*1024*8)
@@ -153,7 +150,7 @@ static DynReg DynRegs[G_MAX];
 #define DREG(_WHICH_) &DynRegs[G_ ## _WHICH_ ]
 
 static struct {
-	Bit32u ea,tmpb,tmpd,stack,shift,newesp;
+	uint32_t ea,tmpb,tmpd,stack,shift,newesp;
 } extra_regs;
 
 #define IllegalOption(msg) E_Exit("DYNX86: illegal option in " msg)
@@ -163,27 +160,27 @@ static struct {
 
 static struct {
 	Bitu callback;
-	Bitu readdata;
+	uint32_t readdata;
 } core_dyn;
 
 #if defined(X86_DYNFPU_DH_ENABLED)
 static struct dyn_dh_fpu {
-	Bit16u		cw,host_cw;
+	uint16_t		cw,host_cw;
 	bool		state_used;
 	// some fields expanded here for alignment purposes
 	struct {
-		Bit32u cw;
-		Bit32u sw;
-		Bit32u tag;
-		Bit32u ip;
-		Bit32u cs;
-		Bit32u ea;
-		Bit32u ds;
-		Bit8u st_reg[8][10];
+		uint32_t cw;
+		uint32_t sw;
+		uint32_t tag;
+		uint32_t ip;
+		uint32_t cs;
+		uint32_t ea;
+		uint32_t ds;
+		uint8_t st_reg[8][10];
 	} state;
 	FPU_P_Reg	temp,temp2;
-	Bit32u		dh_fpu_enabled;
-	Bit8u		temp_state[128];
+	uint32_t		dh_fpu_enabled;
+	uint8_t		temp_state[128];
 } dyn_dh_fpu;
 #endif
 
@@ -252,6 +249,7 @@ static void dyn_restoreregister(DynReg * src_reg, DynReg * dst_reg) {
 #include "core_dyn_x86/decoder.h"
 
 Bits CPU_Core_Dyn_X86_Run(void) {
+	ZoneScoped
 	// helper class to auto-save DH_FPU state on function exit
 	class auto_dh_fpu {
 	public:
@@ -287,7 +285,7 @@ restart_core:
 		if (!chandler->invalidation_map || (chandler->invalidation_map[ip_point&4095]<4)) {
 			block=CreateCacheBlock(chandler,ip_point,32);
 		} else {
-			Bit32s old_cycles=CPU_Cycles;
+			int32_t old_cycles=CPU_Cycles;
 			CPU_Cycles=1;
 			// manually save
 			fpu_saver = auto_dh_fpu();
@@ -344,7 +342,7 @@ run_block:
 		// LOG_MSG("selfmodification of running block at %x:%x",
 		//         SegValue(cs), reg_eip);
 		cpu.exception.which=0;
-		FALLTHROUGH; // let the normal core handle the block-modifying
+		[[fallthrough]]; // let the normal core handle the block-modifying
 		             // instruction
 	case BR_Opcode:
 		CPU_CycleLeft+=CPU_Cycles;
@@ -353,7 +351,7 @@ run_block:
 	case BR_Link1:
 	case BR_Link2:
 		{
-			Bit32u temp_ip=SegPhys(cs)+reg_eip;
+			uint32_t temp_ip=SegPhys(cs)+reg_eip;
 			CodePageHandler* temp_handler = reinterpret_cast<CodePageHandler *>(get_tlb_readhandler(temp_ip));
 			if (temp_handler->flags & (cpu.code.big ? PFLAG_HASCODE32:PFLAG_HASCODE16)) {
 				block=temp_handler->FindCacheBlock(temp_ip & 4095);
@@ -368,7 +366,7 @@ run_block:
 }
 
 Bits CPU_Core_Dyn_X86_Trap_Run(void) {
-	Bit32s oldCycles = CPU_Cycles;
+	int32_t oldCycles = CPU_Cycles;
 	CPU_Cycles = 1;
 	cpu.trap_skip = false;
 

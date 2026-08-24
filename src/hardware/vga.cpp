@@ -22,55 +22,70 @@
 #include <cstring>
 #include <utility>
 
-#include "logging.h"
 #include "../ints/int10.h"
+#include "logging.h"
+#include "math_utils.h"
 #include "pic.h"
-#include "support.h"
 #include "video.h"
 
 VGA_Type vga;
 SVGA_Driver svga;
 
-Bit32u CGA_2_Table[16];
-Bit32u CGA_4_Table[256];
-Bit32u CGA_4_HiRes_Table[256];
-uint32_t CGA_16_Table[256];
+uint32_t CGA_2_Table[16];
+uint32_t CGA_4_Table[256];
+uint32_t CGA_4_HiRes_Table[256];
 int CGA_Composite_Table[1024];
-Bit32u TXT_Font_Table[16];
-Bit32u TXT_FG_Table[16];
-Bit32u TXT_BG_Table[16];
-Bit32u ExpandTable[256];
-Bit32u Expand16Table[4][16];
-Bit32u FillTable[16];
-Bit32u ColorTable[16];
+uint32_t TXT_Font_Table[16];
+uint32_t TXT_FG_Table[16];
+uint32_t TXT_BG_Table[16];
+uint32_t ExpandTable[256];
+uint32_t Expand16Table[4][16];
+uint32_t FillTable[16];
 
-std::pair<const char *, const char *> VGA_DescribeType(const VGAModes type)
+std::pair<const char *, const char *> VGA_DescribeType(const VGAModes type,
+                                                       uint16_t mode)
 {
+	// clang-format off
 	switch (type) {
 	case M_TEXT:
 	case M_HERC_TEXT:
 	case M_TANDY_TEXT:
-	case M_CGA_TEXT_COMPOSITE: return std::make_pair("Text", "");
-	case M_HERC_GFX:           return std::make_pair("Hercules", " monochrome");
+	case M_CGA_TEXT_COMPOSITE: return std::pair("Text", "");
+	case M_HERC_GFX:           return std::pair("Hercules", " monochrome");
 	case M_CGA2_COMPOSITE:
-	case M_CGA4_COMPOSITE:     return std::make_pair("CGA",   " composite");
-	case M_CGA2:               return std::make_pair("CGA",   " 2 color");
-	case M_CGA4:               return std::make_pair("CGA",   " 4 color");
-	case M_CGA16:              return std::make_pair("CGA",   " 16 color");
-	case M_TANDY2:             return std::make_pair("Tandy", " 2 color");
-	case M_TANDY4:             return std::make_pair("Tandy", " 4 color");
-	case M_TANDY16:            return std::make_pair("Tandy", " 16 color");
-	case M_EGA:                return std::make_pair("EGA",   " 16 color");
-	case M_VGA:                return std::make_pair("VGA",   " 8-bit");
-	case M_LIN4:               return std::make_pair("VESA",  " 16 color");
-	case M_LIN8:               return std::make_pair("VESA",  " 8-bit");
-	case M_LIN15:              return std::make_pair("VESA",  " 15-bit");
-	case M_LIN16:              return std::make_pair("VESA",  " 16-bit");
-	case M_LIN24:              return std::make_pair("VESA",  " 24-bit");
-	case M_LIN32:              return std::make_pair("VESA",  " 32-bit");
+	case M_CGA4_COMPOSITE:     return std::pair("CGA",   " composite");
+	case M_CGA2:               return std::pair("CGA",   " 2 color");
+	case M_CGA4:               return std::pair("CGA",   " 4 color");
+	case M_CGA16:              return std::pair("CGA",   " 16 color");
+	case M_TANDY2:             return std::pair("Tandy", " 2 color");
+	case M_TANDY4:             return std::pair("Tandy", " 4 color");
+	case M_TANDY16:            return std::pair("Tandy", " 16 color");
+	case M_EGA: // see comment below
+	    switch (mode) {
+	    case 0x011:            return std::pair("VGA",   " monochrome");
+	    case 0x012:            return std::pair("VGA",   " 16 color");
+	    default:               return std::pair("EGA",   " 16 color");
+	    }
+	case M_VGA:                return std::pair("VGA",   " 8-bit");
+	case M_LIN4:               return std::pair("VESA",  " 16 color");
+	case M_LIN8:               return std::pair("VESA",  " 8-bit");
+	case M_LIN15:              return std::pair("VESA",  " 15-bit");
+	case M_LIN16:              return std::pair("VESA",  " 16-bit");
+	case M_LIN24:              return std::pair("VESA",  " 24-bit");
+	case M_LIN32:              return std::pair("VESA",  " 32-bit");
 	case M_ERROR:
-	default: return std::make_pair("Unknown", "");
-	};
+	default: return std::pair("Unknown", "");
+	}
+	// clang-format on
+
+	// Modes 11h and 12h were supported by high-end EGA cards and because of
+	// that operate internally more like EGA modes (so DOBBox uses the EGA
+	// type for them), however they were classified as VGA from a standards
+	// perspective, so we report them as such.
+	// References:
+	// [1] IBM VGA Technical Reference, Mode of Operation, pp 2-12, 19 March, 1992.
+	// [2] "IBM PC Family- BIOS Video Modes", http://minuszerodegrees.net/video/bios_video_modes.htm
+
 }
 
 void VGA_LogInitialization(const char *adapter_name,
@@ -143,6 +158,61 @@ void VGA_StartResize(Bitu delay /*=50*/) {
 	}
 }
 
+void VGA_SetHostRate(const double refresh_hz)
+{
+	// may come from user content, so always clamp it
+	constexpr auto min_rate = static_cast<double>(REFRESH_RATE_MIN);
+	constexpr auto max_rate = static_cast<double>(REFRESH_RATE_MAX);
+	vga.draw.host_refresh_hz = clamp(refresh_hz,min_rate, max_rate);
+}
+
+void VGA_SetRatePreference(const std::string &pref)
+{
+	if (pref == "default") {
+		vga.draw.dos_rate_mode = VGA_RATE_MODE::DEFAULT;
+		LOG_MSG("VIDEO: Using the DOS video mode's frame rate");
+
+	} else if (pref == "host") {
+		vga.draw.dos_rate_mode = VGA_RATE_MODE::HOST;
+		LOG_MSG("VIDEO: Matching the DOS graphical frame rate to the host");
+
+	} else if (const auto rate = to_finite<double>(pref); std::isfinite(rate)) {
+		vga.draw.dos_rate_mode = VGA_RATE_MODE::CUSTOM;
+		constexpr auto min_rate = static_cast<double>(REFRESH_RATE_MIN);
+		constexpr auto max_rate = static_cast<double>(REFRESH_RATE_MAX);
+		vga.draw.custom_refresh_hz = clamp(rate, min_rate, max_rate);
+		LOG_MSG("VIDEO: Using a custom DOS graphical frame rate of %.3g Hz",
+		        vga.draw.custom_refresh_hz);
+
+	} else {
+		vga.draw.dos_rate_mode = VGA_RATE_MODE::DEFAULT;
+		LOG_WARNING("VIDEO: Unknown frame rate setting: %s, using default",
+		            pref.c_str());
+	}
+}
+
+double VGA_GetPreferredRate()
+{
+	// If we're in a text-mode, always use the as-indicated DOS rate because
+	// the vblank rate is often used for timing.
+	if (CurMode->type & M_TEXT_MODES)
+		return vga.draw.dos_refresh_hz;
+
+	// In we're in a graphical mode, then we can use preferred rates
+	switch (vga.draw.dos_rate_mode) {
+	case VGA_RATE_MODE::DEFAULT:
+		return vga.draw.dos_refresh_hz;
+	case VGA_RATE_MODE::HOST:
+		assert(vga.draw.host_refresh_hz > REFRESH_RATE_MIN);
+		return vga.draw.host_refresh_hz;
+	case VGA_RATE_MODE::CUSTOM:
+		assert(vga.draw.custom_refresh_hz >= REFRESH_RATE_MIN);
+		assert(vga.draw.custom_refresh_hz <= REFRESH_RATE_MAX);
+		return vga.draw.custom_refresh_hz;
+	}
+	return vga.draw.dos_refresh_hz;
+}
+
 void VGA_SetClock(const Bitu which, const uint32_t desired_clock)
 {
 	if (svga.set_clock) {
@@ -196,8 +266,8 @@ void VGA_SetClock(const Bitu which, const uint32_t desired_clock)
 	VGA_StartResize();
 }
 
-void VGA_SetCGA2Table(Bit8u val0,Bit8u val1) {
-	Bit8u total[2]={ val0,val1};
+void VGA_SetCGA2Table(uint8_t val0,uint8_t val1) {
+	uint8_t total[2]={ val0,val1};
 	for (Bitu i=0;i<16;i++) {
 		CGA_2_Table[i]=
 #ifdef WORDS_BIGENDIAN
@@ -210,8 +280,8 @@ void VGA_SetCGA2Table(Bit8u val0,Bit8u val1) {
 	}
 }
 
-void VGA_SetCGA4Table(Bit8u val0,Bit8u val1,Bit8u val2,Bit8u val3) {
-	Bit8u total[4]={ val0,val1,val2,val3};
+void VGA_SetCGA4Table(uint8_t val0,uint8_t val1,uint8_t val2,uint8_t val3) {
+	uint8_t total[4]={ val0,val1,val2,val3};
 	for (Bitu i=0;i<256;i++) {
 		CGA_4_Table[i]=
 #ifdef WORDS_BIGENDIAN

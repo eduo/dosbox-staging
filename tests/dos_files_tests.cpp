@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@
 
 #include "control.h"
 #include "dos_system.h"
+#include "drives.h"
 #include "shell.h"
 #include "string_utils.h"
 
@@ -54,23 +55,15 @@ namespace {
 
 class DOS_FilesTest : public DOSBoxTestFixture {};
 
-void assert_DTAExtendName(std::string input,
-                          std::string expected_name,
-                          std::string expected_ext)
+void assert_DTAExtendName(const std::string_view input_fullname,
+                          const std::string_view expected_name,
+                          const std::string_view expected_ext)
 {
-	char *const input_str = const_cast<char *>(&input.c_str()[0]);
-	// char * const input_name = &input[0];
-	// needs to be minimum length of the input up to the dot + 1 (null)
-	char output_filename[DOS_PATHLENGTH];
-	char *const filename = &output_filename[0];
-	char output_ext[DOS_PATHLENGTH];
-	char *const ext = &output_ext[0];
-
-	DTAExtendName(input_str, filename, ext);
+	const auto [output_name, output_ext] = DTAExtendName(input_fullname.data());
 
 	// mutates input up to dot
-	EXPECT_EQ(filename, expected_name);
-	EXPECT_EQ(ext, expected_ext);
+	EXPECT_EQ(output_name, expected_name);
+	EXPECT_EQ(output_ext, expected_ext);
 }
 
 void assert_DOS_MakeName(char const *const input,
@@ -78,7 +71,7 @@ void assert_DOS_MakeName(char const *const input,
                          std::string exp_fullname = "",
                          int exp_drive = 0)
 {
-	Bit8u drive_result;
+	uint8_t drive_result;
 	char fullname_result[DOS_PATHLENGTH];
 	bool result = DOS_MakeName(input, fullname_result, &drive_result);
 	EXPECT_EQ(result, exp_result);
@@ -110,7 +103,7 @@ TEST_F(DOS_FilesTest, DOS_MakeName_Z_AUTOEXEC_BAT_exists)
 // ramifications across the codebase if not replicated
 TEST_F(DOS_FilesTest, DOS_MakeName_Drive_Index_Set_On_Failure)
 {
-	Bit8u drive_result;
+	uint8_t drive_result;
 	char fullname_result[DOS_PATHLENGTH];
 	bool result;
 	result = DOS_MakeName("A:\r\n", fullname_result, &drive_result);
@@ -345,24 +338,6 @@ TEST_F(DOS_FilesTest, DOS_FindFirst_FindFile_Nonexistant)
 	EXPECT_EQ(dos.errorcode, DOSERR_NO_MORE_FILES);
 }
 
-// this probably isn't a desirable quality, but figure that out later
-TEST_F(DOS_FilesTest, DOS_DTAExtendName_Mutates_Input)
-{
-	char input_str[] = "123456789AAAA.EXT\0";
-	int initial_input_name = strlen(input_str);
-	char *const input_name = &input_str[0];
-	// needs to be minimum length of the input up to the dot + 1 (null)
-	char output_filename[14];
-	char *const filename = &output_filename[0];
-	char output_ext[4];
-	char *const ext = &output_ext[0];
-
-	DTAExtendName(input_name, filename, ext);
-
-	EXPECT_EQ(strlen(input_name), 13);
-	EXPECT_NE(initial_input_name, strlen(input_str));
-}
-
 TEST_F(DOS_FilesTest, DOS_DTAExtendName_Space_Pads)
 {
 	assert_DTAExtendName("1234.E  ", "1234    ", "E  ");
@@ -371,6 +346,20 @@ TEST_F(DOS_FilesTest, DOS_DTAExtendName_Space_Pads)
 TEST_F(DOS_FilesTest, DOS_DTAExtendName_Enforces_8_3)
 {
 	assert_DTAExtendName("12345678ABCDEF.123ABCDE", "12345678", "123");
+}
+
+TEST_F(DOS_FilesTest, VFILE_Register)
+{
+	VFILE_Register("TEST", 0, 0, "/");
+	EXPECT_FALSE(DOS_FindFirst("Z:\\TEST\\FILENA~1.TXT", 0, false));
+	VFILE_Register("filename_1.txt", 0, 0, "/TEST/");
+	EXPECT_TRUE(DOS_FindFirst("Z:\\TEST\\FILENA~1.TXT", 0, false));
+	EXPECT_FALSE(DOS_FindFirst("Z:\\TEST\\FILENA~2.TXT", 0, false));
+	VFILE_Register("filename_2.txt", 0, 0, "/TEST/");
+	EXPECT_TRUE(DOS_FindFirst("Z:\\TEST\\FILENA~2.TXT", 0, false));
+	EXPECT_FALSE(DOS_FindFirst("Z:\\TEST\\FILENA~3.TXT", 0, false));
+	VFILE_Register("filename_3.txt", 0, 0, "/TEST/");
+	EXPECT_TRUE(DOS_FindFirst("Z:\\TEST\\FILENA~3.TXT", 0, false));
 }
 
 } // namespace

@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -21,45 +21,44 @@
 
 #include "dosbox.h"
 
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <thread>
 #include <unistd.h>
 
-#include <chrono>
-#include <thread>
-
-#include "debug.h"
-#include "cpu.h"
-#include "video.h"
-#include "pic.h"
-#include "cpu.h"
 #include "callback.h"
-#include "inout.h"
-#include "mixer.h"
-#include "timer.h"
-#include "dos_inc.h"
-#include "setup.h"
-#include "shell.h"
 #include "control.h"
+#include "cpu.h"
 #include "cross.h"
-#include "programs.h"
-#include "support.h"
-#include "mapper.h"
-#include "ints/int10.h"
-#include "render.h"
+#include "debug.h"
+#include "dos_inc.h"
 //--Added 2012-10-19 by Alun Bestor to allow parallel port emulation
 #include "parport.h"
 //--End of modifications
 //--Added 2021-02-10 by C.W. Betts to allow using our custom MT-32 emulation
 #include "BXMIDIConfig.hpp"
 //--End of modifications
-#include "pci_bus.h"
-#include "midi.h"
 #include "hardware.h"
+#include "inout.h"
+#include "ints/int10.h"
+#include "mapper.h"
+#include "midi.h"
+#include "mixer.h"
 #include "ne2000.h"
+#include "pci_bus.h"
+#include "pic.h"
+#include "programs.h"
+#include "render.h"
+#include "setup.h"
+#include "shell.h"
+#include "support.h"
+#include "timer.h"
+#include "tracy.h"
+#include "video.h"
 
 bool shutdown_requested = false;
 MachineType machine;
@@ -88,7 +87,6 @@ void FPU_Init(Section*);
 
 void DMA_Init(Section*);
 
-void MIXER_Init(Section*);
 void HARDWARE_Init(Section*);
 
 #if defined(PCI_FUNCTIONALITY_ENABLED)
@@ -102,9 +100,8 @@ void SBLASTER_Init(Section*);
 void MPU401_Init(Section*);
 void PCSPEAKER_Init(Section*);
 void TANDYSOUND_Init(Section*);
-void DISNEY_Init(Section*);
+void LPT_DAC_Init(Section *);
 void PS1AUDIO_Init(Section *);
-void INNOVA_Init(Section*);
 void SERIAL_Init(Section*);
 
 
@@ -185,6 +182,7 @@ static Bitu Normal_Loop() {
 }
 
 void increaseticks() { //Make it return ticksRemain and set it in the function above to remove the global variable.
+	ZoneScoped
 	if (GCC_UNLIKELY(ticksLocked)) { // For Fast Forward Mode
 		ticksRemain=5;
 		/* Reset any auto cycle guessing for this frame */
@@ -236,9 +234,9 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 	if (ticksScheduled >= 250 || ticksDone >= 250 || (ticksAdded > 15 && ticksScheduled >= 5) ) {
 		if(ticksDone < 1) ticksDone = 1; // Protect against div by zero
 		/* ratio we are aiming for is around 90% usage*/
-		Bit32s ratio = (ticksScheduled * (CPU_CyclePercUsed*90*1024/100/100)) / ticksDone;
-		Bit32s new_cmax = CPU_CycleMax;
-		Bit64s cproc = (Bit64s)CPU_CycleMax * (Bit64s)ticksScheduled;
+		int32_t ratio = (ticksScheduled * (CPU_CyclePercUsed*90*1024/100/100)) / ticksDone;
+		int32_t new_cmax = CPU_CycleMax;
+		int64_t cproc = (int64_t)CPU_CycleMax * (int64_t)ticksScheduled;
 		double ratioremoved = 0.0; //increase scope for logging
 		if (cproc > 0) {
 			/* ignore the cycles added due to the IO delay code in order
@@ -246,7 +244,7 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 			ratioremoved = (double) CPU_IODelayRemoved / (double) cproc;
 			if (ratioremoved < 1.0) {
 				double ratio_not_removed = 1 - ratioremoved;
-				ratio = (Bit32s)((double)ratio * ratio_not_removed);
+				ratio = (int32_t)((double)ratio * ratio_not_removed);
 
 				/* Don't allow very high ratio which can cause us to lock as we don't scale down
 				 * for very low ratios. High ratio might result because of timing resolution */
@@ -264,11 +262,11 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 				if (ratio <= 1024) {
 					// ratio_not_removed = 1.0; //enabling this restores the old formula
 					double r = (1.0 + ratio_not_removed) /(ratio_not_removed + 1024.0/(static_cast<double>(ratio)));
-					new_cmax = 1 + static_cast<Bit32s>(CPU_CycleMax * r);
+					new_cmax = 1 + static_cast<int32_t>(CPU_CycleMax * r);
 				} else {
-					Bit64s ratio_with_removed = (Bit64s) ((((double)ratio - 1024.0) * ratio_not_removed) + 1024.0);
-					Bit64s cmax_scaled = (Bit64s)CPU_CycleMax * ratio_with_removed;
-					new_cmax = (Bit32s)(1 + (CPU_CycleMax >> 1) + cmax_scaled / (Bit64s)2048);
+					int64_t ratio_with_removed = (int64_t) ((((double)ratio - 1024.0) * ratio_not_removed) + 1024.0);
+					int64_t cmax_scaled = (int64_t)CPU_CycleMax * ratio_with_removed;
+					new_cmax = (int32_t)(1 + (CPU_CycleMax >> 1) + cmax_scaled / (int64_t)2048);
 				}
 			}
 		}
@@ -408,6 +406,9 @@ static void DOSBOX_RealInit(Section * sec) {
 	} else
 		E_Exit("DOSBOX:Unknown machine type %s", mtype.c_str());
 
+	// Set the user's prefered MCB fault handling strategy
+	DOS_SetMcbFaultStrategy(section->Get_string("mcb_fault_strategy"));
+
 	// Convert the users video memory in either MB or KiB to bytes
 	const auto vmemsize_string = std::string(section->Get_string("vmemsize"));
 
@@ -419,14 +420,15 @@ static void DOSBOX_RealInit(Section * sec) {
 	vmemsize *= (vmemsize <= 8) ? 1024 * 1024 : 1024;
 	vga.vmemsize = check_cast<uint32_t>(vmemsize);
 
-	if (std::string(section->Get_string("vesa_modes")) == "all")
-		int10.vesa_mode_preference = VESA_MODE_PREF::ALL;
-	else
-		int10.vesa_mode_preference = VESA_MODE_PREF::COMPATIBLE;
+	if (const auto pref = std::string_view(section->Get_string("vesa_modes")); pref == "compatible") {
+		int10.vesa_mode_preference = VesaModePref::Compatible;
+	} else if (pref == "halfline") {
+		int10.vesa_mode_preference = VesaModePref::Halfline;
+	} else {
+		int10.vesa_mode_preference = VesaModePref::All;
+	}
 
-	CPU_AllowSpeedMods = section->Get_bool("speed_mods");
-	LOG_MSG("SYSTEM: Speed modifications are %s",
-	        CPU_AllowSpeedMods ? "enabled" : "disabled");
+	VGA_SetRatePreference(section->Get_string("dos_rate"));
 }
 
 void DOSBOX_Init() {
@@ -437,18 +439,14 @@ void DOSBOX_Init() {
 	Prop_string* Pstring; // use pstring when touching properties
 	Prop_string *pstring;
 	Prop_bool* Pbool;
-	Prop_multival *pmulti;
-	Prop_multival_remain* Pmulti_remain;
+	PropMultiVal *pmulti;
+	PropMultiValRemain* pmulti_remain;
 
 	// Specifies if and when a setting can be changed
 	constexpr auto always = Property::Changeable::Always;
 	constexpr auto deprecated = Property::Changeable::Deprecated;
 	constexpr auto only_at_start = Property::Changeable::OnlyAtStart;
 	constexpr auto when_idle = Property::Changeable::WhenIdle;
-
-	// Some frequently used option sets
-	const char *rates[] = {"44100", "48000", "32000", "22050", "16000",
-	                       "11025", "8000",  "49716", 0};
 
 	/* Setup all the different modules making up DOSBox */
 	const char *machines[] = {"hercules",      "cga",
@@ -464,8 +462,8 @@ void DOSBOX_Init() {
 	pstring->Set_help(
 	        "Select a language to use: de, en, es, fr, it, pl, and ru\n"
 	        "Notes: This setting will override the 'LANG' environment, if set.\n"
-	        "       The 'translations' directory bundled with the executable holds these data\n"
-	        "       files. Please keep it along-side the executable to support this feature.");
+	        "       The 'resources/translations' directory bundled with the executable holds\n"
+	        "       these files. Please keep it along-side the executable to support this feature.");
 
 	pstring = secprop->Add_string("machine", only_at_start, "svga_s3");
 	pstring->Set_values(machines);
@@ -491,23 +489,55 @@ void DOSBOX_Init() {
 	        "though few games might require a higher value.\n"
 	        "There is generally no speed advantage when raising this value.");
 
+	const char *mcb_fault_strategies[] = {"deny", "repair", "report", "allow", nullptr};
+	pstring = secprop->Add_string("mcb_fault_strategy",
+	                              only_at_start,
+	                              mcb_fault_strategies[0]);
+	pstring->Set_help(
+	        "How software-corrupted memory chain blocks should be handled:\n"
+	        "  deny:    Quit (and report) when faults are detected (default).\n"
+	        "  repair:  Repair (and report) faults using adjacent chain blocks.\n"
+	        "  report:  Report faults but otherwise proceed as-is.\n"
+	        "  allow:   Allow faults to go unreported (hardware behavior).\n"
+	        "The default (deny) is recommended unless a game is failing with MCB corruption errors.");
+	pstring->Set_values(mcb_fault_strategies);
+
 	const char *vmemsize_choices[] = {
 	        "auto",
-	        "1",    "2",    "4",    "8", // MiB
-	        "256", "512",  "1024", "2048", "4096", "8192", 0, // KiB
+	        "1",
+	        "2",
+	        "4",
+	        "8", // MiB
+	        "256",
+	        "512",
+	        "1024",
+	        "2048",
+	        "4096",
+	        "8192",
+	        0, // KiB
 	};
 	pstring = secprop->Add_string("vmemsize", only_at_start, "auto");
 	pstring->Set_values(vmemsize_choices);
 	pstring->Set_help(
 	        "Video memory in MiB (1-8) or KiB (256 to 8192). 'auto' uses the default per video adapter.");
 
-	const char *vesa_modes_choices[] = {"compatible", "all", 0};
+	pstring = secprop->Add_string("dos_rate", when_idle, "default");
+	pstring->Set_help(
+	        "Customize the emulated video mode's frame rate, in Hz:\n"
+	        "default:  The DOS video mode determines the rate (recommended).\n"
+	        "host:     Match the DOS rate to the host rate (see 'host_rate' setting).\n"
+	        "<value>:  Sets the rate to an exact value, between 24.000 and 1000.000 (Hz).\n"
+	        "We recommend the 'default' rate; otherwise test and set on a per-game basis.");
+
+	const char *vesa_modes_choices[] = {"compatible", "all", "halfline", 0};
 	Pstring = secprop->Add_string("vesa_modes", only_at_start, "compatible");
 	Pstring->Set_values(vesa_modes_choices);
 	Pstring->Set_help(
 	        "Controls the selection of VESA 1.2 and 2.0 modes offered:\n"
 	        "  compatible   A tailored selection that maximizes game compatibility.\n"
 	        "               This is recommended along with 4 or 8 MB of video memory.\n"
+	        "  halfline     Supports the low-resolution halfline VESA 2.0 mode used by\n"
+	        "               Extreme Assault. Use only if needed, as it's not S3 compatible.\n"
 	        "  all          Offers all modes for a given video memory size, however\n"
 	        "               some games may not use them properly (flickering) or may need\n"
 	        "               more system memory (mem = ) to use them.");
@@ -536,22 +566,35 @@ void DOSBOX_Init() {
 	        "join      : combines them into one big section (legacy behavior).\n"
 	        "overwrite : use the last one encountered, like other conf settings.");
 
+	Pbool = secprop->Add_bool("automount", only_at_start, true);
+	Pbool->Set_help(
+	        "Mounts 'drives/[c]' directories as drives on startup, where [c] is\n"
+	        "a lower-case drive letter from a to y.  The 'drives' folder can be\n"
+	        "provided relative to the current directory or via built-in resources.\n"
+	        "Mount settings can be optionally provided using a [c].conf file along-\n"
+	        "-side the drive's directory, with content as follows:\n"
+	        "  [drive]\n"
+	        "  type    = dir, overlay, floppy, or cdrom\n"
+	        "  label   = custom_label\n"
+	        "  path    = path-specification, ie: path = %%path%%;c:\\tools\n"
+	        "  override_drive = mount the directory to this drive instead (default empty)\n"
+	        "  verbose = true or false");
+
 	const char *verbosity_choices[] = {
-	        "auto", "high", "medium", "low", "splash_only", "quiet", 0,
+	        "auto", "high", "low", "quiet", 0,
 	};
 	Pstring = secprop->Add_string("startup_verbosity", only_at_start, "auto");
 	Pstring->Set_values(verbosity_choices);
 	Pstring->Set_help(
 	        "Controls verbosity prior to displaying the program:\n"
-	        "Verbosity   | Splash | Welcome | Early stdout\n"
-	        "high        |  yes   |   yes   |    yes\n"
-	        "medium      |  no    |   yes   |    yes\n"
-	        "low         |  no    |   no    |    yes\n"
-	        "quiet       |  no    |   no    |    no\n"
-	        "splash_only |  yes   |   no    |    no\n"
+	        "Verbosity   | Welcome | Early stdout\n"
+	        "high        |   yes   |    yes\n"
+	        "low         |   no    |    yes\n"
+	        "quiet       |   no    |    no\n"
 	        "auto        | 'low' if exec or dir is passed, otherwise 'high'");
 
 	secprop = control->AddSection_prop("render", &RENDER_Init, true);
+	secprop->AddEarlyInitFunction(&RENDER_InitShaderSource, true);
 	pint = secprop->Add_int("frameskip", always, 0);
 	pint->SetMinMax(0, 10);
 	pint->Set_help("How many frames DOSBox skips before drawing one.");
@@ -571,7 +614,30 @@ void DOSBOX_Init() {
 	const char *mono_pal[] = {"white", "paperwhite", "green", "amber", 0};
 	pstring->Set_values(mono_pal);
 
-	pmulti = secprop->Add_multi("scaler", always, " ");
+	pstring = secprop->Add_string("cga_colors", only_at_start, "default");
+	pstring->Set_help(
+	        "Sets the interpretation of CGA RGBI colors. Affects all machine types capable of\n"
+	        "displaying CGA or better graphics. Built-in presets:\n"
+	        "  default:       The canonical CGA palette, as emulated by VGA adapters (default).\n"
+	        "  tandy [BL]:    Emulation of an idealised Tandy monitor with adjustable Brown Level\n"
+	        "                 (0 - red, 50 - brown, 100 - dark yellow; defaults to 50).\n"
+	        "  tandy-warm:    Emulation of the actual color output of an unknown Tandy monitor.\n"
+	        "  ibm5153 [C]:   Emulation of the actual color output of an IBM 5153 monitor with\n"
+	        "                 a unique Contrast control that dims non-bright colors only\n"
+	        "                 (0 to 100; defaults to 100).\n"
+	        "  agi-amiga-v1, agi-amiga-v2, agi-amiga-v3:\n"
+	        "                 Palettes used by the Amiga ports of Sierra AGI games\n"
+	        "                 (see the manual for further details).\n"
+	        "  agi-amigaish:  A mix of EGA and Amiga colors used by the Sarien AGI-interpreter.\n"
+	        "  scumm-amiga:   Palette used by the Amiga ports of LucasArts EGA games.\n"
+	        "  colodore:      Commodore 64 inspired colors based on the Colodore palette.\n"
+	        "  colodore-sat:  Colodore palette with 20% more saturation.\n"
+	        "  dga16:         A modern take on the canonical CGA palette with dialed back contrast.\n"
+			"You can also set custom colors by specifying 16 space or comma separated color values,\n"
+			"either as 3 or 6-digit hex codes (e.g. #f00 or #ff0000 for full red), or decimal\n"
+			"RGB triplets (e.g. (255, 0, 255) for magenta).");
+
+	pmulti = secprop->AddMultiVal("scaler", always, " ");
 	pmulti->SetValue("none");
 	pmulti->Set_help("Scaler used to enlarge/enhance low resolution modes.\n"
 	                 "If 'forced' is appended, then the scaler will be used even if\n"
@@ -603,7 +669,7 @@ void DOSBOX_Init() {
 	pstring->Set_help("Either 'none' or a GLSL shader name. Works only with\n"
 	                  "OpenGL output.  Can be either an absolute path, a file\n"
 	                  "in the 'glshaders' subdirectory of the DOSBox\n"
-	                  "configuration directory, or one of the built-in shaders:\n"
+	                  "configuration directory, one of the bundled shaders:\n"
 	                  "advinterp2x, advinterp3x, advmame2x, advmame3x,\n"
 	                  "crt-easymode-flat, crt-fakelottes-flat, rgb2x, rgb3x,\n"
 	                  "scan2x, scan3x, tv2x, tv3x, sharp (default).");
@@ -630,8 +696,8 @@ void DOSBOX_Init() {
 	Pstring->Set_help("CPU Type used in emulation. auto is the fastest choice.");
 
 
-	Pmulti_remain = secprop->Add_multiremain("cycles", always, " ");
-	Pmulti_remain->Set_help(
+	pmulti_remain = secprop->AddMultiValRemain("cycles", always, " ");
+	pmulti_remain->Set_help(
 		"Number of instructions DOSBox tries to emulate each millisecond.\n"
 		"Setting this value too high results in sound dropouts and lags.\n"
 		"Cycles can be set in 3 ways:\n"
@@ -643,11 +709,11 @@ void DOSBOX_Init() {
 		"                  handle.");
 
 	const char* cyclest[] = { "auto","fixed","max","%u",0 };
-	Pstring = Pmulti_remain->GetSection()->Add_string("type", always, "auto");
-	Pmulti_remain->SetValue("auto");
+	Pstring = pmulti_remain->GetSection()->Add_string("type", always, "auto");
+	pmulti_remain->SetValue("auto");
 	Pstring->Set_values(cyclest);
 
-	Pmulti_remain->GetSection()->Add_string("parameters", always, "");
+	pmulti_remain->GetSection()->Add_string("parameters", always, "");
 
 	Pint = secprop->Add_int("cycleup", always, 10);
 	Pint->SetMinMax(1,1000000);
@@ -671,27 +737,8 @@ void DOSBOX_Init() {
 #endif
 
 
-	secprop=control->AddSection_prop("mixer",&MIXER_Init);
-	Pbool = secprop->Add_bool("nosound", only_at_start, false);
-	Pbool->Set_help("Enable silent mode, sound is still emulated though.");
-
-	Pint = secprop->Add_int("rate", only_at_start, 48000);
-	Pint->Set_values(rates);
-	Pint->Set_help("Mixer sample rate, setting any device's rate higher than this will probably lower their sound quality.");
-
-	const char *blocksizes[] = {
-		 "1024", "2048", "4096", "8192", "512", "256", "128", 0};
-	Pint = secprop->Add_int("blocksize", only_at_start, 512);
-	Pint->Set_values(blocksizes);
-	Pint->Set_help("Mixer block size, larger blocks might help sound stuttering but sound will also be more lagged.");
-
-	Pint = secprop->Add_int("prebuffer",only_at_start,20);
-	Pint->SetMinMax(0,100);
-	Pint->Set_help("How many milliseconds of data to keep on top of the blocksize.");
-
-	Pbool = secprop->Add_bool("negotiate", only_at_start, true);
-	Pbool->Set_help("Allow system audio driver to negotiate optimal rate and blocksize\n"
-	                "as close to the specified values as possible.");
+	// Configure mixer
+	MIXER_AddConfigSection(control);
 
 	secprop = control->AddSection_prop("midi", &MIDI_Init, true);
 	secprop->AddInitFunction(&MPU401_Init, true);
@@ -717,12 +764,9 @@ void DOSBOX_Init() {
 #if C_FLUIDSYNTH
 		"fluidsynth",
 #endif
+#if C_MT32EMU
 		"mt32",
-		//--Disabled 2020-12-31 by C.W. Betts: We handle our own MT32 emulation.
-		//#if C_MT32EMU
-		//		"mt32",
-		//#endif
-		//--End of modifications
+#endif
 		"none",
 		0 };
 
@@ -734,14 +778,10 @@ void DOSBOX_Init() {
 	        "'fluidsynth', to use the built-in MIDI synthesizer. See the\n"
 	        "       [fluidsynth] section for detailed configuration.\n"
 #endif
-					  //--Disabled 2021-02-10 by C.W. Betts: We handle our own MT32 emulation.
-					  //#if C_MT32EMU
-					  //--End of modifications
+#if C_MT32EMU
 	        "'mt32', to use the built-in Roland MT-32 synthesizer.\n"
 	        "       See the [mt32] section for detailed configuration.\n"
-					  //--Disabled 2021-02-10 by C.W. Betts: We handle our own MT32 emulation.
-					  //#endif
-					  //--End of modifications
+#endif
 	        "'auto', to use the first working external MIDI player. This\n"
 	        "       might be a software synthesizer or physical device.");
 
@@ -750,9 +790,7 @@ void DOSBOX_Init() {
 	        "Configuration options for the selected MIDI interface.\n"
 	        "This is usually the id or name of the MIDI synthesizer you want\n"
 	        "to use (find the id/name with DOS command 'mixer /listmidi').\n"
-					  //--Modified 2021-02-10 by C.W. Betts: We handle our own MT32 emulation.
-#if (C_FLUIDSYNTH == 1 || /*C_MT32EMU == 1*/ 1)
-					  //--End of modifications
+#if (C_FLUIDSYNTH == 1 || C_MT32EMU == 1)
 	        "- This option has no effect when using the built-in synthesizers\n"
 	        "  (mididevice = fluidsynth or mt32).\n"
 #endif
@@ -778,14 +816,11 @@ void DOSBOX_Init() {
 #if C_FLUIDSYNTH
 	FLUID_AddConfigSection(control);
 #endif
-    
+
 #if C_MT32EMU
 	MT32_AddConfigSection(control);
 #endif
-	
-	//--Added 2021-02-10 by C.W. Betts to allow using our custom MT-32 emulation
 	BXMIDIMT32_AddConfigSection(control);
-	//--End of modifications
 
 #if C_DEBUG
 	secprop=control->AddSection_prop("debug",&DEBUG_Init);
@@ -828,8 +863,7 @@ void DOSBOX_Init() {
 	pint->SetMinMax(0, 100);
 
 	pint = secprop->Add_int("oplrate", deprecated, false);
-	pint->Set_help("oplrate is deprecated. The OPL waveform is now sampled\n"
-	               "        at the mixer's playback rate to avoid resampling.");
+	pint->Set_help("The OPL waveform is now sampled at the mixer's playback rate to avoid resampling.");
 
 	const char* oplmodes[] = {"auto", "cms", "opl2", "dualopl2", "opl3", "opl3gold", "none", 0};
 	Pstring = secprop->Add_string("oplmode", when_idle, "auto");
@@ -837,12 +871,46 @@ void DOSBOX_Init() {
 	Pstring->Set_help("Type of OPL emulation. On 'auto' the mode is determined by 'sbtype'.\n"
 	                  "All OPL modes are AdLib-compatible, except for 'cms'.");
 
-	const char* oplemus[] = {"default", "compat", "fast", "mame", "nuked", 0};
-	Pstring = secprop->Add_string("oplemu", when_idle, "default");
-	Pstring->Set_values(oplemus);
+	Pstring = secprop->Add_string("oplemu", deprecated, "");
+	Pstring->Set_help("Only 'nuked' OPL emulation is supported now.");
+
+	Pstring = secprop->Add_string("sb_filter", when_idle, "modern");
 	Pstring->Set_help(
-	        "Provider for the OPL emulation. 'compat' provides better quality,\n"
-	        "'nuked' is the default and most accurate (but the most CPU-intensive).");
+	        "Type of filter to emulate for the Sound Blaster digital sound output:\n"
+	        "  auto:      Use the appropriate filter determined by 'sbtype'.\n"
+	        "  sb1, sb2, sbpro1, sbpro2, sb16:\n"
+	        "             Use the filter of this Sound Blaster model.\n"
+	        "  modern:    Use linear interpolation upsampling that acts as a low-pass filter;\n"
+	        "             this is the legacy DOSBox behaviour (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  One or two custom filters in the following format:\n"
+	        "               TYPE ORDER FREQ\n"
+	        "             Where TYPE can be 'hpf' (high-pass) or 'lpf' (low-pass),\n"
+	        "             ORDER is the order of the filter from 1 to 16\n"
+	        "             (1st order = 6dB/oct slope, 2nd order = 12dB/oct, etc.),\n"
+	        "             and FREQ is the cutoff frequency in Hz. Examples:\n"
+	        "                lpf 2 12000\n"
+	        "                hpf 3 120 lfp 1 6500");
+
+	Pbool = secprop->Add_bool("sb_filter_always_on", when_idle, false);
+	Pbool->Set_help("Force the Sound Blaster filter to be always on\n"
+					"(disallow programs from turning the filter off).");
+
+	Pstring = secprop->Add_string("opl_filter", when_idle, "auto");
+	Pstring->Set_help(
+	        "Type of filter to emulate for the Sound Blaster OPL output:\n"
+	        "  auto:      Use the appropriate filter determined by 'sbtype' (default).\n"
+	        "  sb1, sb2, sbpro1, sbpro2, sb16:\n"
+	        "             Use the filter of this Sound Blaster model.\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
+
+	pstring = secprop->Add_string("cms_filter", when_idle, "on");
+	pstring->Set_help(
+	        "Filter for the Sound Blaster CMS output:\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
 
 	// Configure Gravis UltraSound emulation
 	GUS_AddConfigSection(control);
@@ -850,54 +918,101 @@ void DOSBOX_Init() {
 	// Configure Innovation SSI-2001 emulation
 	INNOVATION_AddConfigSection(control);
 
+	// PC speaker emulation
 	secprop = control->AddSection_prop("speaker",&PCSPEAKER_Init,true);//done
-	Pbool = secprop->Add_bool("pcspeaker", when_idle, true);
-	Pbool->Set_help("Enable PC-Speaker emulation.");
 
-	// Basis for the default PC-Speaker sample generation rate:
-	//   "With the PC speaker, typically a 6-bit DAC with a maximum value of
-	//   63
-	//    is used at a sample rate of 18,939.4 Hz."
-	// PC Speaker. (2020, June 8). In Wikipedia. Retrieved from
-	// https://en.wikipedia.org/w/index.php?title=PC_speaker&oldid=961464485
-	//
-	// As this is the frequency range that game authors in the 1980s would
-	// have worked with when tuning their game audio, we therefore use this
-	// same value given it's the most likely to produce audio as intended by
-	// the authors.
-	pint = secprop->Add_int("pcrate", when_idle, 18939);
-	pint->SetMinMax(8000, 48000);
-	pint->Set_help("Sample rate of the PC-Speaker sound generation.");
-
-	const char *zero_offset_opts[] = {"auto", "true", "false", 0};
-	pstring = secprop->Add_string("zero_offset", when_idle, zero_offset_opts[0]);
-	pstring->Set_values(zero_offset_opts);
+	const char *pcspeaker_models[] = {"discrete", "impulse", "none", "off", 0};
+	pstring = secprop->Add_string("pcspeaker", when_idle, pcspeaker_models[0]);
 	pstring->Set_help(
-	        "Neutralizes and prevents the PC speaker's DC-offset from harming other sources.\n"
-	        "'auto' enables this for non-Windows systems and disables it on Windows.\n"
-	        "If your OS performs its own DC-offset correction, then set this to 'false'.");
+	        "PC speaker emulation model:\n"
+	        "  discrete: Waveform is created using discrete steps (default).\n"
+	        "            Works well for games that use RealSound-type effects.\n"
+	        "  impulse:  Waveform is created using sinc impulses.\n"
+	        "            Recommended for square-wave games, like Commander Keen.\n"
+	        "            While improving accuracy, it is more CPU intensive.\n"
+	        "  none/off: Don't use the PC Speaker.");
+	pstring->Set_values(pcspeaker_models);
 
+	pstring = secprop->Add_string("pcspeaker_filter", when_idle, "on");
+	pstring->Set_help(
+	        "Filter for the PC Speaker output:\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
+
+	pstring = secprop->Add_string("zero_offset", deprecated, "");
+	pstring->Set_help(
+	        "DC-offset is now eliminated globally from the master mixer output.");
+
+	// Tandy audio emulation
 	secprop->AddInitFunction(&TANDYSOUND_Init, true);
+
 	const char *tandys[] = {"auto", "on", "off", 0};
+
 	Pstring = secprop->Add_string("tandy", when_idle, "auto");
 	Pstring->Set_values(tandys);
-	Pstring->Set_help("Enable Tandy Sound System emulation. For 'auto', emulation is present only if machine is set to 'tandy'.");
+	Pstring->Set_help(
+	        "Enable Tandy Sound System emulation."
+	        "For 'auto', emulation is present only if machine is set to 'tandy'.");
 
-	Pint = secprop->Add_int("tandyrate", when_idle, 44100);
-	Pint->Set_values(rates);
-	Pint->Set_help("Sample rate of the Tandy 3-Voice generation.");
+	Pstring = secprop->Add_string("tandy_filter", when_idle, "on");
+	Pstring->Set_help(
+	        "Filter for the Tandy synth output:\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
 
-	secprop->AddInitFunction(&DISNEY_Init,true);//done
+	Pstring = secprop->Add_string("tandy_dac_filter", when_idle, "on");
+	Pstring->Set_help(
+	        "Filter for the Tandy DAC output:\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output."
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
 
-	Pbool = secprop->Add_bool("disney", when_idle, true);
-	Pbool->Set_help("Enable Disney Sound Source emulation. (Covox Voice Master and Speech Thing compatible).");
+	// LPT DAC device emulation
+	secprop->AddInitFunction(&LPT_DAC_Init, true);
+	const char *lpt_dac_types[] = {"none", "disney", "covox", "ston1", "off", 0};
+	pstring = secprop->Add_string("lpt_dac", when_idle, lpt_dac_types[0]);
+	pstring->Set_help("Type of DAC plugged into the parallel port:\n"
+	                  "  disney:    Disney Sound Source.\n"
+	                  "  covox:     Covox Speech Thing.\n"
+	                  "  ston1:     Stereo-on-1 DAC, in stereo up to 30 kHz.\n"
+	                  "  none/off:  Don't use a parallel port DAC (default).");
+	pstring->Set_values(lpt_dac_types);
+
+	pstring = secprop->Add_string("lpt_dac_filter", when_idle, "on");
+	pstring->Set_help(
+	        "Filter for the LPT DAC audio device(s):\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
+
+	// Deprecate the overloaded Disney setting
+	Pbool = secprop->Add_bool("disney", deprecated, false);
+	Pbool->Set_help("Use 'lpt_dac=disney' to enable the Disney Sound Source.");
 
 	// IBM PS/1 Audio emulation
 	secprop->AddInitFunction(&PS1AUDIO_Init, true);
+
 	Pbool = secprop->Add_bool("ps1audio", when_idle, false);
 	Pbool->Set_help("Enable IBM PS/1 Audio emulation.");
 
+	Pstring = secprop->Add_string("ps1audio_filter", when_idle, "on");
+	Pstring->Set_help(
+	        "Filter for the PS/1 Audio synth output:\n"
+	        "  on:        Filter the output (default).\n"
+	        "  off:       Don't filter the output.\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
+
+	Pstring = secprop->Add_string("ps1audio_dac_filter", when_idle, "on");
+	Pstring->Set_help("Filter for the PS/1 Audio DAC output:\n"
+	                  "  on:        Filter the output (default).\n"
+	                  "  off:       Don't filter the output.\n"
+	                  "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
+
+	// Joystick emulation
 	secprop=control->AddSection_prop("joystick",&BIOS_Init,false);//done
+
 	secprop->AddInitFunction(&INT10_Init);
 	secprop->AddInitFunction(&MOUSE_Init); //Must be after int10 as it uses CurMode
 	secprop->AddInitFunction(&JOYSTICK_Init,true);
@@ -937,87 +1052,94 @@ void DOSBOX_Init() {
 	Pint->SetMinMax(0,100);
 	Pint->Set_help("the percentage of motion to ignore. 100 turns the stick into a digital one.");
 
-	secprop=control->AddSection_prop("serial",&SERIAL_Init,true);
-	const char* serials[] = { "dummy", "disabled", "modem", "nullmodem",
-	                          "directserial",0 };
+	Pbool = secprop->Add_bool("use_joy_calibration_hotkeys", when_idle, false);
+	Pbool->Set_help(
+	        "Activates hotkeys to allow realtime calibration of the joystick's x and y axis.\n"
+	        "Only consider this if in-game calibration fails and other settings have been tried.\n"
+	        " - Ctrl/Cmd+Arrow-keys adjusts the axis' scalar value:\n"
+	        "     - left and right diminish or magnify the x-axis scalar, respectively.\n"
+	        "     - down and up diminish or magnify the y-axis scalar, respectively.\n"
+	        " - Alt+Arrow-keys adjusts the axis' offset position:\n"
+	        "     - left and right shift x-axis offset in the given direction.\n"
+	        "     - down and up shift the y-axis offset in the given direction.\n"
+	        " - Reset the X and Y calibration using Ctrl+Delete and Ctrl+Home, respectively.\n"
+	        "Each tap will report X or Y calibration values you can set below. When you find parameters that work,\n"
+	        "quit the game, switch this setting back to false, and populate the reported calibration parameters.");
 
-	Pmulti_remain = secprop->Add_multiremain("serial1", when_idle, " ");
-	Pstring = Pmulti_remain->GetSection()->Add_string("type", when_idle, "dummy");
-	Pmulti_remain->SetValue("dummy");
+	pstring = secprop->Add_string("joy_x_calibration", when_idle, "auto");
+	pstring->Set_help(
+	        "Apply x-axis calibration parameters from the hotkeys. Default is 'auto'.");
+
+	pstring = secprop->Add_string("joy_y_calibration", when_idle, "auto");
+	pstring->Set_help(
+	        "Apply Y-axis calibration parameters from the hotkeys. Default is 'auto'.");
+
+	secprop = control->AddSection_prop("serial", &SERIAL_Init, true);
+	const char *serials[] = {"dummy",
+	                         "disabled",
+	                         "mouse",
+	                         "modem",
+	                         "nullmodem",
+	                         "direct",
+	                         0};
+
+	pmulti_remain = secprop->AddMultiValRemain("serial1", when_idle, " ");
+	Pstring = pmulti_remain->GetSection()->Add_string("type", when_idle, "dummy");
+	pmulti_remain->SetValue("dummy");
 	Pstring->Set_values(serials);
-	Pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
-	Pmulti_remain->Set_help(
+	pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
+	pmulti_remain->Set_help(
 	        "set type of device connected to com port.\n"
-	        "Can be disabled, dummy, modem, nullmodem, directserial.\n"
-	        "Additional parameters must be in the same line in the form of\n"
+	        "Can be disabled, dummy, mouse, modem, nullmodem, direct.\n"
+	        "Additional parameters must be on the same line in the form of\n"
 	        "parameter:value. Parameter for all types is irq (optional).\n"
-	        "for directserial: realport (required), rxdelay (optional).\n"
-	        "                 (realport:COM1 realport:ttyS0).\n"
-	        "for modem: listenport sock (all optional).\n"
+	        "for mouse:\n"
+	        "   type, can be one of:\n"
+	        "      2btn:  2 buttons, Microsoft serial mouse\n"
+	        "      3btn:  3 buttons, Logitech serial mouse\n"
+	        "      wheel: 3 buttons + wheel serial mouse\n"
+	        "      msm:   3 buttons, Mouse Systems Mouse\n"
+	        "      2btn+msm, 3btn+msm, wheel+msm : autoselection\n"
+	        "   rate, can be normal or smooth (more frequent updates than on real PC)\n"
+	        "   Default is type:wheel+msm rate:smooth\n"
+	        "for direct: realport (required), rxdelay (optional).\n"
+	        "   (realport:COM1 realport:ttyS0).\n"
+	        "for modem: listenport, sock, baudrate (all optional).\n"
 	        "for nullmodem: server, rxdelay, txdelay, telnet, usedtr,\n"
-	        "               transparent, port, inhsocket, sock (all optional).\n"
+	        "   transparent, port, inhsocket, sock (all optional).\n"
 	        "SOCK parameter specifies the protocol to be used by both sides\n"
-	        "     of the conection. 0 for TCP and 1 for ENet reliable UDP.\n"
+	        "of the conection. 0 for TCP and 1 for ENet reliable UDP.\n"
 	        "Example: serial1=modem listenport:5000 sock:1");
 
-	Pmulti_remain = secprop->Add_multiremain("serial2", when_idle, " ");
-	Pstring = Pmulti_remain->GetSection()->Add_string("type", when_idle, "dummy");
-	Pmulti_remain->SetValue("dummy");
+	pmulti_remain = secprop->AddMultiValRemain("serial2", when_idle, " ");
+	Pstring = pmulti_remain->GetSection()->Add_string("type", when_idle, "dummy");
+	pmulti_remain->SetValue("dummy");
 	Pstring->Set_values(serials);
-	Pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
-	Pmulti_remain->Set_help("see serial1");
+	pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
+	pmulti_remain->Set_help("see serial1");
 
-	Pmulti_remain = secprop->Add_multiremain("serial3", when_idle, " ");
-	Pstring = Pmulti_remain->GetSection()->Add_string("type", when_idle, "disabled");
-	Pmulti_remain->SetValue("disabled");
+	pmulti_remain = secprop->AddMultiValRemain("serial3", when_idle, " ");
+	Pstring = pmulti_remain->GetSection()->Add_string("type", when_idle, "disabled");
+	pmulti_remain->SetValue("disabled");
 	Pstring->Set_values(serials);
-	Pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
-	Pmulti_remain->Set_help("see serial1");
+	pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
+	pmulti_remain->Set_help("see serial1");
 
-	Pmulti_remain = secprop->Add_multiremain("serial4", when_idle, " ");
-	Pstring = Pmulti_remain->GetSection()->Add_string("type", when_idle, "disabled");
-	Pmulti_remain->SetValue("disabled");
+	pmulti_remain = secprop->AddMultiValRemain("serial4", when_idle, " ");
+	Pstring = pmulti_remain->GetSection()->Add_string("type", when_idle, "disabled");
+	pmulti_remain->SetValue("disabled");
 	Pstring->Set_values(serials);
-	Pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
-	Pmulti_remain->Set_help("see serial1");
+	pmulti_remain->GetSection()->Add_string("parameters", when_idle, "");
+	pmulti_remain->Set_help("see serial1");
 
 	pstring = secprop->Add_path("phonebookfile", only_at_start, "phonebook.txt");
 	pstring->Set_help("File used to map fake phone numbers to addresses.");
 
-    //--Added 2012-10-19 by Alun Bestor to allow parallel port emulation
-	// parallel ports
-	secprop=control->AddSection_prop("parallel",&PARALLEL_Init,true);
-	Pstring = secprop->Add_string("parallel1",Property::Changeable::WhenIdle,"disabled");
-	Pstring->Set_help(
-                      "parallel1-3 -- set type of device connected to lpt port.\n"
-                      "Can be:\n"
-                      "\treallpt (direct parallel port passthrough using Porttalk),\n"
-                      "\tfile (records data to a file or passes it to a device),\n"
-                      "\tprinter (virtual dot-matrix printer, see [printer] section)\n"
-                      "Additional parameters must be in the same line in the form of\n"
-                      "parameter:value.\n"
-                      "  for reallpt:\n"
-                      "  Windows:\n"
-                      "    realbase (the base address of your real parallel port).\n"
-                      "      Default: 378\n"
-                      "    ecpbase (base address of the ECP registers, optional).\n"
-                      "  Linux: realport (the parallel port device i.e. /dev/parport0).\n"
-                      "  for file: \n"
-                      "    dev:<devname> (i.e. dev:lpt1) to forward data to a device,\n"
-                      "    or append:<file> appends data to the specified file.\n"
-                      "    Without the above parameters data is written to files in the capture dir.\n"
-                      "    Additional parameters: timeout:<milliseconds> = how long to wait before\n"
-                      "    closing the file on inactivity (default:500), addFF to add a formfeed when\n"
-                      "    closing, addLF to add a linefeed if the app doesn't, cp:<codepage number>\n"
-                      "    to perform codepage translation, i.e. cp:437\n"
-                      "  for printer:\n"
-                      "    printer still has it's own configuration section above."
-                      );
-	Pstring = secprop->Add_string("parallel2",Property::Changeable::WhenIdle,"disabled");
-	Pstring->Set_help("see parallel1");
-	Pstring = secprop->Add_string("parallel3",Property::Changeable::WhenIdle,"disabled");
-	Pstring->Set_help("see parallel1");
-//--End of modifications
+	secprop = control->AddSection_prop("parallel", &PARALLEL_Init, true);
+	for (const char *name : {"parallel1", "parallel2", "parallel3"}) {
+		pstring = secprop->Add_string(name, when_idle, "disabled");
+		pstring->Set_help("Parallel-port device managed by Boxer.");
+	}
 
 	/* All the DOS Related stuff, which will eventually start up in the shell */
 	secprop=control->AddSection_prop("dos",&DOS_Init,false);//done
@@ -1041,6 +1163,17 @@ void DOSBOX_Init() {
 	pstring->Set_help("Set DOS version (5.0 by default). Specify as major.minor format.\n"
 	                  "A single number is treated as the major version.\n"
 	                  "Common settings are 3.3, 5.0, 6.22, and 7.1.");
+
+	pint = secprop->Add_int("country", when_idle, 0);
+	pint->Set_help("Set DOS country code which will affect country-specific\n"
+	               "information such as date, time, and decimal formats.\n"
+	               "If set to 0, the country code corresponding to the\n"
+	               "selected keyboard layout will be used.");
+
+	Pbool = secprop->Add_bool("expand_shell_variable", when_idle, false);
+	Pbool->Set_help("Enable expanding environment variables such as %PATH%\n"
+	                "while in the DOS command shell. FreeDOS and MS-DOS 7/8\n"
+	                "COMMAND.COM supports this behavior.");
 
 	secprop->AddInitFunction(&DOS_KeyboardLayout_Init,true);
 	Pstring = secprop->Add_string("keyboardlayout", when_idle,  "auto");

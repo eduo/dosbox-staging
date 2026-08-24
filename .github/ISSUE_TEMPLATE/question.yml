@@ -1,6 +1,5 @@
 name: Question
 description: Ask for support or start a discussion.
-title: '[Question] '
 labels: question
 #assignees: 'anonymous@temp'
 
@@ -28,7 +27,7 @@ body:
     attributes:
       label: Different version than latest?
       description: Alpha, Git, or Branch?
-      placeholder: "Ex. 0.78.0-alpha, git verion, branch testing."
+      placeholder: "Ex. 0.79.0-alpha, git verion, branch testing."
     validations:
       required: false
   - type: dropdown

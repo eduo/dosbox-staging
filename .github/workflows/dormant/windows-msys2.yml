@@ -6,7 +6,7 @@ jobs:
   build_windows_msys2:
     name: ${{ matrix.conf.compiler }} ${{ matrix.conf.bits }}-bit
     runs-on: windows-latest
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       # Because Clang depends on GCC, we run the Clang-32/64bit jobs
       # first to create combined caches that include both Clang and GCC.
@@ -36,7 +36,7 @@ jobs:
       CCACHE_MAXSIZE:  "64M"
       CCACHE_COMPRESS: "true"
     steps:
-      - uses:  actions/checkout@v2
+      - uses:  actions/checkout@v3
       - name:  Get Date
         id:    get-date
         shell: bash

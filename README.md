@@ -50,11 +50,9 @@ support today's systems.
 
 ### Feature differences
 
-DOSBox Staging does not support audio playback using physical CDs.
-Using CD Digital Audio emulation (loading CD music via
-[cue sheets](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) or
-mounting [ISO images](https://en.wikipedia.org/wiki/ISO_image)) is
-preferred instead.
+DOSBox Staging supports features not included in DOSBox SVN.
+Below is a detailed comparison of feature differences between
+DOSBox Staging and DOSBox SVN.
 
 Codecs supported for CD-DA emulation:
 
@@ -152,16 +150,16 @@ Install build dependencies appropriate for your OS:
 
 ``` shell
 # Fedora
-sudo dnf install ccache gcc-c++ meson alsa-lib-devel libpng-devel \
+sudo dnf install ccache gcc-c++ meson alsa-lib-devel libatomic libpng-devel \
                  SDL2-devel SDL2_net-devel opusfile-devel fluidsynth-devel \
-                 mt32emu-devel libslirp-devel
+                 mt32emu-devel libslirp-devel speexdsp-devel
 ```
 
 ``` shell
 # Debian, Ubuntu
-sudo apt install ccache build-essential libasound2-dev libpng-dev \
+sudo apt install ccache build-essential libasound2-dev libatomic1 libpng-dev \
                  libsdl2-dev libsdl2-net-dev libopusfile-dev \
-                 libfluidsynth-dev libslirp-dev
+                 libfluidsynth-dev libslirp-dev libspeexdsp-dev
 
 # Install Meson on Debian-10 "Buster" or Ubuntu-20.04 and older
 sudo apt install python3-setuptools python3-pip
@@ -174,20 +172,21 @@ sudo apt install meson
 ``` shell
 # Arch, Manjaro
 sudo pacman -S ccache gcc meson alsa-lib libpng sdl2 sdl2_net opusfile \
-               fluidsynth libslirp
+               fluidsynth libslirp speexdsp
 ```
 
 ``` shell
 # openSUSE
-sudo zypper install ccache gcc gcc-c++ meson alsa-devel libpng-devel \
+sudo zypper install ccache gcc gcc-c++ meson alsa-devel libatomic1 libpng-devel \
                     libSDL2-devel libSDL2_net-devel opusfile-devel \
-                    fluidsynth-devel libmt32emu-devel libslirp-devel
+                    fluidsynth-devel libmt32emu-devel libslirp-devel \
+                    speexdsp
 ```
 
 ``` shell
 # macOS
 xcode-select --install
-brew install ccache meson libpng sdl2 sdl2_net opusfile fluid-synth libslirp
+brew install ccache meson libpng sdl2 sdl2_net opusfile fluid-synth libslirp speexdsp
 ```
 
 ### Build and stay up-to-date with the latest sources
@@ -209,14 +208,7 @@ brew install ccache meson libpng sdl2 sdl2_net opusfile fluid-synth libslirp
     cleaning your working directories:
 
     ``` shell
-    meson setup \
-        -Dbuildtype=release \
-        -Ddefault_library=static \
-        -Db_asneeded=true \
-        -Dtry_static_libs=png \
-        -Dfluidsynth:enable-floats=true \
-        -Dfluidsynth:try-static-deps=true \
-      build
+    meson setup build
     ```
 
     The above enables all of DOSBox Staging's functional features. If you're
@@ -229,8 +221,11 @@ brew install ccache meson libpng sdl2 sdl2_net opusfile fluid-synth libslirp
     meson compile -C build
     ```
 
-    Your binary is: `build/dosbox` -- have fun!
+    Your binary is: `build/dosbox`
 
+    The binary depends on local resources relative to it, so we suggest
+    symlinking to the binary from your PATH, such as into ~/.local/bin/
+    -- Have fun!
 
 ### Windows - Visual Studio (2019 or newer)
 
@@ -239,13 +234,17 @@ is bootstrapped, open PowerShell and run:
 
 ``` powershell
 PS:\> .\vcpkg integrate install
-PS:\> .\vcpkg install --triplet x64-windows libpng sdl2 sdl2-net libmt32emu opusfile fluidsynth gtest
 ```
 
-These two steps will ensure that MSVC finds and links all dependencies.
+This step will ensure that MSVC can use vcpkg to build, find and links all 
+dependencies.
 
 Start Visual Studio and open file: `vs\dosbox.sln`. Make sure you have `x64`
 selected as the solution platform.  Use Ctrl+Shift+B to build all projects.
+
+Note, the first time you build a configuration, dependencies will be built 
+automatically and stored in the `vcpkg_installed` directory. This can take 
+a significant length of time.
 
 [vcpkg]: https://github.com/microsoft/vcpkg
 

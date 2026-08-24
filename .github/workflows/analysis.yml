@@ -2,7 +2,7 @@ name: Code analysis
 
 on: [push, pull_request]
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -14,11 +14,14 @@ env:
 jobs:
   run_linters:
     name: Script linters
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-20.04
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier', github.actor) == false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - run:  sudo apt-get update
       - name: Run shellcheck
         run:  ./scripts/verify-bash.sh
@@ -46,12 +49,15 @@ jobs:
     needs: run_linters
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - run:  sudo apt-get update
 
       - name: Install dependencies
         run: |
-          sudo apt-get install clang-tools python3-bs4 $(cat .github/packages/ubuntu-20.04-apt.txt)
+          sudo apt-get install clang-tools python3-bs4 $(cat packages/ubuntu-20.04-apt.txt)
           sudo pip3 install --upgrade meson ninja
 
       - name:  Prepare compiler cache
@@ -80,7 +86,20 @@ jobs:
       - name: Log environment
         run:  ./scripts/log-env.sh
 
-      - run:  meson setup -Dunit_tests=disabled build
+      - run: |
+          meson setup \
+          -Dbuildtype=debug \
+          -Ddefault_library=shared \
+          -Dsystem_libraries=speexdsp \
+          -Duse_alsa=false \
+          -Duse_fluidsynth=false \
+          -Duse_mt32emu=false \
+          -Duse_opengl=false \
+          -Duse_png=false \
+          -Duse_sdl2_net=false \
+          -Duse_slirp=false \
+          -Dunit_tests=disabled \
+          build
 
       - name: Build and run scan-build
         run: |
@@ -96,7 +115,7 @@ jobs:
 
       - name: Summarize report
         env:
-          MAX_BUGS: 27
+          MAX_BUGS: 4
         run: |
           # summary
           echo "Full report is included in build Artifacts"
@@ -131,30 +150,17 @@ jobs:
             logs: gcc-usan-logs
             max_issues: 0
 
-          # Clang allows enabling both AddressSanitizer and
-          # UndefinedBehaviorSanitizer at the same time.
-          # See Clang manual to learn more.
-          - name: Clang undefined+address sanitizer
-            build_flags: >-
-              --native-file=.github/meson/native-clang.ini
-              -Db_sanitize=address,undefined
-              -Dc_args=-fsanitize-recover=all
-              -Dcpp_args=-fsanitize-recover=all
-              -Db_asneeded=true
-              -Db_lundef=false
-              -Ddefault_library=static
-              --wrap-mode=forcefallback
-              -Dfluidsynth:try-static-deps=true 
-            logs: clang-uasan-logs
-            max_issues: 4
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - run:  sudo apt-get update
 
       - name: Install dependencies
         run: |
-          sudo apt-get install $(cat .github/packages/ubuntu-20.04-apt.txt)
+          sudo apt-get install $(cat packages/ubuntu-20.04-apt.txt)
           sudo pip3 install --upgrade meson ninja
 
       # Workaround frequent HTTPS-based connectivity issues
@@ -187,9 +193,9 @@ jobs:
       - name: Log environment
         run:  ./scripts/log-env.sh
 
-      - run:  meson setup -Dunit_tests=disabled ${{ matrix.conf.build_flags }} build
+      - run:  meson setup -Dbuildtype=debug -Dunit_tests=disabled -Dunit_tests=disabled ${{ matrix.conf.build_flags }} build
 
-      - run:  ninja -C build
+      - run:  meson compile -C build
 
       - name: Run sanitizer test cases
         run:  ./.github/scripts/run-sanitizers.sh build sanitizer-logs

@@ -45,22 +45,27 @@ std::unique_ptr<Config> control = {};
 
 // Set by parseconfigfile so Prop_path can use it to construct the realpath
 static std::string current_config_dir;
-void Value::destroy() throw(){
-	if (type == V_STRING) delete _string;
+void Value::destroy()
+{
+	if (type == V_STRING) {
+		delete _string;
+		_string = nullptr;
+	}
 }
 
-Value& Value::copy(Value const& in) {
-	if (this != &in) { //Selfassigment!
-		if(type != V_NONE && type != in.type) throw WrongType();
-		destroy();
-		plaincopy(in);
-	}
+Value &Value::copy(const Value &in)
+{
+	assert(this != &in);
+	assert(type == V_NONE || type == in.type);
+	destroy();
+	plaincopy(in);
 	return *this;
 }
 
-void Value::plaincopy(Value const& in) throw(){
-	type = in.type;
-	_int = in._int;
+void Value::plaincopy(const Value &in)
+{
+	type    = in.type;
+	_int    = in._int;
 	_double = in._double;
 	_bool = in._bool;
 	_hex = in._hex;
@@ -68,33 +73,36 @@ void Value::plaincopy(Value const& in) throw(){
 }
 
 Value::operator bool () const {
-	if(type != V_BOOL) throw WrongType();
+	assert(type == V_BOOL);
 	return _bool;
 }
 
 Value::operator Hex () const {
-	if(type != V_HEX) throw WrongType();
+	assert(type == V_HEX);
 	return _hex;
 }
 
 Value::operator int () const {
-	if(type != V_INT) throw WrongType();
+	assert(type == V_INT);
 	return _int;
 }
 
 Value::operator double () const {
-	if(type != V_DOUBLE) throw WrongType();
+	assert(type == V_DOUBLE);
 	return _double;
 }
 
 Value::operator char const* () const {
-	if(type != V_STRING) throw WrongType();
+	assert(type == V_STRING);
 	return _string->c_str();
 }
 
-bool Value::operator==(Value const& other) const {
-	if(this == &other) return true;
-	if(type != other.type) return false;
+bool Value::operator==(const Value &other) const
+{
+	if (this == &other)
+		return true;
+	if (type != other.type)
+		return false;
 	switch(type){
 		case V_BOOL: 
 			if(_bool == other._bool) return true;
@@ -112,49 +120,36 @@ bool Value::operator==(Value const& other) const {
 			if((*_string) == (*other._string)) return true;
 			break;
 		default:
-			E_Exit("comparing stuff that doesn't make sense");
-			break;
+		        LOG_ERR("SETUP: Comparing stuff that doesn't make sense");
+		        break;
 	}
 	return false;
 }
-bool Value::SetValue(string const& in,Etype _type) {
-	/* Throw exception if the current type isn't the wanted type 
-	 * Unless the wanted type is current.
-	 */
-	if(_type == V_CURRENT && type == V_NONE) throw WrongType();
-	if(_type != V_CURRENT) { 
-		if(type != V_NONE && type != _type) throw WrongType();
-		type = _type;
-	}
-	bool retval = true;
-	switch(type){
-		case V_HEX:
-			retval = set_hex(in);
-			break;
-		case V_INT:
-			retval = set_int(in);
-			break;
-		case V_BOOL:
-			retval = set_bool(in);
-			break;
-		case V_STRING:
-			set_string(in);
-			break;
-		case V_DOUBLE:
-			retval = set_double(in);
-			break;
+bool Value::SetValue(const std::string &in, const Etype _type)
+{
+	assert(type == V_NONE || type == _type);
+	type = _type;
 
-		case V_NONE:
-		case V_CURRENT:
-		default:
-			/* Shouldn't happen!/Unhandled */
-			throw WrongType();
-			break;
+	bool retval = true;
+	switch (type) {
+	case V_HEX: retval = SetHex(in); break;
+	case V_INT: retval = set_int(in); break;
+	case V_BOOL: retval = set_bool(in); break;
+	case V_STRING: set_string(in); break;
+	case V_DOUBLE: retval = set_double(in); break;
+
+	case V_NONE:
+	case V_CURRENT:
+	default:
+		LOG_ERR("SETUP: Unhandled type when setting value: %s", in.c_str());
+		retval = false;
+		break;
 	}
 	return retval;
 }
 
-bool Value::set_hex(std::string const& in) {
+bool Value::SetHex(const std::string &in)
+{
 	istringstream input(in);
 	input.flags(ios::hex);
 	int result = INT_MIN;
@@ -164,7 +159,8 @@ bool Value::set_hex(std::string const& in) {
 	return true;
 }
 
-bool Value::set_int(string const &in) {
+bool Value::set_int(const std::string &in)
+{
 	istringstream input(in);
 	int result = INT_MIN;
 	input >> result;
@@ -172,7 +168,8 @@ bool Value::set_int(string const &in) {
 	_int = result;
 	return true;
 }
-bool Value::set_double(string const &in) {
+bool Value::set_double(const std::string &in)
+{
 	istringstream input(in);
 	double result = std::numeric_limits<double>::infinity();
 	input >> result;
@@ -181,7 +178,8 @@ bool Value::set_double(string const &in) {
 	return true;
 }
 
-bool Value::set_bool(string const &in) {
+bool Value::set_bool(const std::string &in)
+{
 	istringstream input(in);
 	string result;
 	input >> result;
@@ -198,8 +196,10 @@ bool Value::set_bool(string const &in) {
 	return true;
 }
 
-void Value::set_string(string const & in) {
-	if(!_string) _string = new string();
+void Value::set_string(const std::string &in)
+{
+	if (!_string)
+		_string = new string();
 	_string->assign(in);
 }
 
@@ -243,18 +243,26 @@ Property::Property(const std::string &name, Changeable::Value when)
 	        "Only letters, digits, and underscores are allowed in property name");
 }
 
-bool Property::CheckValue(Value const& in, bool warn){
-	if (suggested_values.empty()) return true;
-	for(const_iter it = suggested_values.begin();it != suggested_values.end();++it) {
+bool Property::CheckValue(const Value &in, bool warn)
+{
+	if (suggested_values.empty())
+		return true;
+	for (const_iter it = suggested_values.begin(); it != suggested_values.end();
+	     ++it) {
 		if ( (*it) == in) { //Match!
 			return true;
 		}
 	}
-	if (warn) LOG_MSG("\"%s\" is not a valid value for variable: %s.\nIt might now be reset to the default value: %s",in.ToString().c_str(),propname.c_str(),default_value.ToString().c_str());
+	if (warn)
+		LOG_WARNING("CONFIG: \"%s\" is an invalid value for: %s. Using the default: %s",
+		        in.ToString().c_str(),
+		        propname.c_str(),
+		        default_value.ToString().c_str());
 	return false;
 }
 
-void Property::Set_help(string const& in) {
+void Property::Set_help(const std::string &in)
+{
 	string result = string("CONFIG_") + propname;
 	upcase(result);
 	MSG_Add(result.c_str(),in.c_str());
@@ -267,11 +275,12 @@ const char * Property::GetHelp() const
 	return MSG_Get(result.c_str());
 }
 
-bool Prop_int::SetVal(Value const& in, bool forced, bool warn) {
+bool Prop_int::SetVal(const Value &in, bool forced, bool warn)
+{
 	if (forced) {
 		value = in;
 		return true;
-	} else if (!suggested_values.empty()){
+	} else if (!suggested_values.empty()) {
 		if ( CheckValue(in,warn) ) {
 			value = in;
 			return true;
@@ -295,24 +304,26 @@ bool Prop_int::SetVal(Value const& in, bool forced, bool warn) {
 		if (va > ma ) va = ma; else va = mi;
 
 		if (warn) {
-			LOG_MSG("%s is outside the allowed range %s-%s for variable: %s.\n"
-			        "It has been set to the closest boundary: %d.",
-			        in.ToString().c_str(),
-			        min_value.ToString().c_str(),
-			        max_value.ToString().c_str(),
-			        propname.c_str(),
-			        va);
+			LOG_WARNING("CONFIG: %s lies outside the range %s-%s for variable: %s. Limiting it to: %d",
+			            in.ToString().c_str(),
+			            min_value.ToString().c_str(),
+			            max_value.ToString().c_str(),
+			            propname.c_str(),
+			            va);
 		}
 
 		value = va; 
 		return true;
 	}
 }
-bool Prop_int::CheckValue(Value const& in, bool warn) {
-//	if(!suggested_values.empty() && Property::CheckValue(in,warn)) return true;
-	if(!suggested_values.empty()) return Property::CheckValue(in,warn);
+bool Prop_int::CheckValue(const Value &in, bool warn)
+{
+	//	if(!suggested_values.empty() && Property::CheckValue(in,warn))
+	// return true;
+	if (!suggested_values.empty())
+		return Property::CheckValue(in, warn);
 	// LOG_MSG("still used ?");
-	//No >= and <= in Value type and == is ambigious
+	// No >= and <= in Value type and == is ambigious
 	const int mi = min_value;
 	const int ma = max_value;
 	int va = static_cast<int>(Value(in));
@@ -320,18 +331,18 @@ bool Prop_int::CheckValue(Value const& in, bool warn) {
 	if (va >= mi && va <= ma) return true;
 
 	if (warn) {
-		LOG_MSG("%s lies outside the range %s-%s for variable: %s.\n"
-		        "It might now be reset to the default value: %s",
-		        in.ToString().c_str(),
-		        min_value.ToString().c_str(),
-		        max_value.ToString().c_str(),
-		        propname.c_str(),
-		        default_value.ToString().c_str());
+		LOG_WARNING("CONFIG: %s lies outside the range %s-%s for variable: %s. Using the default: %s",
+		            in.ToString().c_str(),
+		            min_value.ToString().c_str(),
+		            max_value.ToString().c_str(),
+		            propname.c_str(),
+		            default_value.ToString().c_str());
 	}
 	return false;
 }
 
-bool Prop_double::SetValue(std::string const& input) {
+bool Prop_double::SetValue(const std::string &input)
+{
 	Value val;
 	if(!val.SetValue(input,Value::V_DOUBLE)) return false;
 	return SetVal(val,false,true);
@@ -340,15 +351,17 @@ bool Prop_double::SetValue(std::string const& input) {
 //void Property::SetValue(char* input){
 //	value.SetValue(input, Value::V_CURRENT);
 //}
-bool Prop_int::SetValue(std::string const& input) {
+bool Prop_int::SetValue(const std::string &input)
+{
 	Value val;
 	if (!val.SetValue(input,Value::V_INT)) return false;
 	bool retval = SetVal(val,false,true);
 	return retval;
 }
 
-bool Prop_string::SetValue(std::string const& input) {
-	//Special version for lowcase stuff
+bool Prop_string::SetValue(const std::string &input)
+{
+	// Special version for lowcase stuff
 	std::string temp(input);
 	//suggested values always case insensitive.
 	//If there are none then it can be paths and such which are case sensitive
@@ -356,8 +369,10 @@ bool Prop_string::SetValue(std::string const& input) {
 	Value val(temp,Value::V_STRING);
 	return SetVal(val,false,true);
 }
-bool Prop_string::CheckValue(Value const& in, bool warn) {
-	if (suggested_values.empty()) return true;
+bool Prop_string::CheckValue(const Value &in, bool warn)
+{
+	if (suggested_values.empty())
+		return true;
 	for (const auto &val : suggested_values) {
 		if (val == in) { // Match!
 			return true;
@@ -369,12 +384,17 @@ bool Prop_string::CheckValue(Value const& in, bool warn) {
 			}
 		}
 	}
-	if (warn) LOG_MSG("\"%s\" is not a valid value for variable: %s.\nIt might now be reset to the default value: %s",in.ToString().c_str(),propname.c_str(),default_value.ToString().c_str());
+	if (warn)
+		LOG_WARNING("CONFIG: \"%s\" is an invalid value for: %s. Using the default: %s",
+		        in.ToString().c_str(),
+		        propname.c_str(),
+		        default_value.ToString().c_str());
 	return false;
 }
 
-bool Prop_path::SetValue(std::string const& input) {
-	//Special version to merge realpath with it
+bool Prop_path::SetValue(const std::string &input)
+{
+	// Special version to merge realpath with it
 
 	Value val(input,Value::V_STRING);
 	bool retval = SetVal(val,false,true);
@@ -393,25 +413,27 @@ bool Prop_path::SetValue(std::string const& input) {
 	return retval;
 }
 
-bool Prop_bool::SetValue(std::string const& input) {
-	return value.SetValue(input,Value::V_BOOL);
+bool Prop_bool::SetValue(const std::string &input)
+{
+	return value.SetValue(input, Value::V_BOOL);
 }
 
-bool Prop_hex::SetValue(std::string const& input) {
+bool Prop_hex::SetValue(const std::string &input)
+{
 	Value val;
 	val.SetValue(input,Value::V_HEX);
 	return SetVal(val,false,true);
 }
 
-void Prop_multival::make_default_value()
+void PropMultiVal::make_default_value()
 {
 	Property *p = section->Get_prop(0);
 	if (!p) return;
 
 	int i = 1;
-	std::string result = p->Get_Default_Value().ToString();
+	std::string result = p->GetDefaultValue().ToString();
 	while( (p = section->Get_prop(i++)) ) {
-		std::string props = p->Get_Default_Value().ToString();
+		std::string props = p->GetDefaultValue().ToString();
 		if (props.empty()) continue;
 		result += separator; result += props;
 	}
@@ -420,9 +442,10 @@ void Prop_multival::make_default_value()
 }
 
 //TODO checkvalue stuff
-bool Prop_multival_remain::SetValue(std::string const& input) {
-	Value val(input,Value::V_STRING);
-	bool retval = SetVal(val,false,true);
+bool PropMultiValRemain::SetValue(const std::string &input)
+{
+	Value val(input, Value::V_STRING);
+	bool retval = SetVal(val, false, true);
 
 	std::string local(input);
 	int i = 0,number_of_properties = 0;
@@ -461,9 +484,10 @@ bool Prop_multival_remain::SetValue(std::string const& input) {
 }
 
 //TODO checkvalue stuff
-bool Prop_multival::SetValue(std::string const& input) {
-	Value val(input,Value::V_STRING);
-	bool retval = SetVal(val,false,true);
+bool PropMultiVal::SetValue(const std::string &input)
+{
+	Value val(input, Value::V_STRING);
+	bool retval = SetVal(val, false, true);
 
 	std::string local(input);
 	int i = 0;
@@ -521,7 +545,7 @@ bool Prop_multival::SetValue(std::string const& input) {
 const std::vector<Value>& Property::GetValues() const {
 	return suggested_values;
 }
-const std::vector<Value>& Prop_multival::GetValues() const {
+const std::vector<Value>& PropMultiVal::GetValues() const {
 	Property *p = section->Get_prop(0);
 	//No properties in this section. do nothing
 	if (!p) return suggested_values;
@@ -534,9 +558,9 @@ const std::vector<Value>& Prop_multival::GetValues() const {
 }
 
 /*
-void Section_prop::Add_double(char const * const _propname, double _value) {
-	Property* test=new Prop_double(_propname,_value);
-	properties.push_back(test);
+void Section_prop::Add_double(const char * _propname, double _value) {
+        Property* test=new Prop_double(_propname,_value);
+        properties.push_back(test);
 }*/
 
 void Property::Set_values(const char * const *in) {
@@ -557,78 +581,99 @@ void Property::Set_values(const std::vector<std::string> & in) {
 	}
 }
 
-Prop_int* Section_prop::Add_int(string const& _propname, Property::Changeable::Value when, int _value) {
-	Prop_int* test=new Prop_int(_propname,when,_value);
+Prop_int *Section_prop::Add_int(const std::string &_propname,
+                                Property::Changeable::Value when, int _value)
+{
+	Prop_int *test = new Prop_int(_propname, when, _value);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_string* Section_prop::Add_string(string const& _propname, Property::Changeable::Value when, char const * const _value) {
-	Prop_string* test=new Prop_string(_propname,when,_value);
+Prop_string *Section_prop::Add_string(const std::string &_propname,
+                                      Property::Changeable::Value when,
+                                      const char *_value)
+{
+	Prop_string *test = new Prop_string(_propname, when, _value);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_path* Section_prop::Add_path(string const& _propname, Property::Changeable::Value when, char const * const _value) {
-	Prop_path* test=new Prop_path(_propname,when,_value);
+Prop_path *Section_prop::Add_path(const std::string &_propname,
+                                  Property::Changeable::Value when, const char *_value)
+{
+	Prop_path *test = new Prop_path(_propname, when, _value);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_bool* Section_prop::Add_bool(string const& _propname, Property::Changeable::Value when, bool _value) {
-	Prop_bool* test=new Prop_bool(_propname,when,_value);
+Prop_bool *Section_prop::Add_bool(const std::string &_propname,
+                                  Property::Changeable::Value when, bool _value)
+{
+	Prop_bool *test = new Prop_bool(_propname, when, _value);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_hex* Section_prop::Add_hex(string const& _propname, Property::Changeable::Value when, Hex _value) {
-	Prop_hex* test=new Prop_hex(_propname,when,_value);
+Prop_hex *Section_prop::Add_hex(const std::string &_propname,
+                                Property::Changeable::Value when, Hex _value)
+{
+	Prop_hex *test = new Prop_hex(_propname, when, _value);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_multival* Section_prop::Add_multi(std::string const& _propname, Property::Changeable::Value when,std::string const& sep) {
-	Prop_multival* test = new Prop_multival(_propname,when,sep);
+PropMultiVal *Section_prop::AddMultiVal(const std::string &_propname,
+                                       Property::Changeable::Value when,
+                                       const std::string &sep)
+{
+	PropMultiVal *test = new PropMultiVal(_propname, when, sep);
 	properties.push_back(test);
 	return test;
 }
 
-Prop_multival_remain* Section_prop::Add_multiremain(std::string const& _propname, Property::Changeable::Value when,std::string const& sep) {
-	Prop_multival_remain* test = new Prop_multival_remain(_propname,when,sep);
+PropMultiValRemain *Section_prop::AddMultiValRemain(const std::string &_propname,
+                                                    Property::Changeable::Value when,
+                                                    const std::string &sep)
+{
+	PropMultiValRemain *test = new PropMultiValRemain(_propname, when, sep);
 	properties.push_back(test);
 	return test;
 }
 
-int Section_prop::Get_int(string const&_propname) const {
-	for(const_it tel=properties.begin();tel!=properties.end();tel++){
-		if ((*tel)->propname==_propname){
+int Section_prop::Get_int(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); tel++) {
+		if ((*tel)->propname == _propname) {
 			return ((*tel)->GetValue());
 		}
 	}
 	return 0;
 }
 
-bool Section_prop::Get_bool(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
+bool Section_prop::Get_bool(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
 			return ((*tel)->GetValue());
 		}
 	}
 	return false;
 }
 
-double Section_prop::Get_double(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
+double Section_prop::Get_double(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
 			return ((*tel)->GetValue());
 		}
 	}
 	return 0.0;
 }
 
-Prop_path* Section_prop::Get_path(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
+Prop_path *Section_prop::Get_path(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
 			Prop_path* val = dynamic_cast<Prop_path*>((*tel));
 			if (val) return val; else return NULL;
 		}
@@ -636,20 +681,22 @@ Prop_path* Section_prop::Get_path(string const& _propname) const {
 	return NULL;
 }
 
-Prop_multival* Section_prop::Get_multival(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
-			Prop_multival* val = dynamic_cast<Prop_multival*>((*tel));
+PropMultiVal *Section_prop::GetMultiVal(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
+			PropMultiVal* val = dynamic_cast<PropMultiVal*>((*tel));
 			if(val) return val; else return NULL;
 		}
 	}
 	return NULL;
 }
 
-Prop_multival_remain* Section_prop::Get_multivalremain(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
-			Prop_multival_remain* val = dynamic_cast<Prop_multival_remain*>((*tel));
+PropMultiValRemain *Section_prop::GetMultiValRemain(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
+			PropMultiValRemain* val = dynamic_cast<PropMultiValRemain*>((*tel));
 			if (val) return val; else return NULL;
 		}
 	}
@@ -662,25 +709,28 @@ Property* Section_prop::Get_prop(int index){
 	return NULL;
 }
 
-const char* Section_prop::Get_string(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
+const char *Section_prop::Get_string(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
 			return ((*tel)->GetValue());
 		}
 	}
 	return "";
 }
-Hex Section_prop::Get_hex(string const& _propname) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if ((*tel)->propname == _propname){
+Hex Section_prop::Get_hex(const std::string &_propname) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if ((*tel)->propname == _propname) {
 			return ((*tel)->GetValue());
 		}
 	}
 	return 0;
 }
 
-bool Section_prop::HandleInputline(string const& gegevens){
-	string str1 = gegevens;
+bool Section_prop::HandleInputline(const std::string &gegevens)
+{
+	string str1           = gegevens;
 	string::size_type loc = str1.find('=');
 	if (loc == string::npos) return false;
 	string name = str1.substr(0,loc);
@@ -703,14 +753,14 @@ bool Section_prop::HandleInputline(string const& gegevens){
 			continue;
 
 		if (p->IsDeprecated()) {
-			LOG_MSG("CONFIG: Deprecated option '%s'", name.c_str());
-			LOG_MSG("CONFIG: %s", p->GetHelp());
+			LOG_WARNING("CONFIG: Deprecated option '%s'", name.c_str());
+			LOG_WARNING("CONFIG: %s", p->GetHelp());
 			return false;
 		}
 
 		return p->SetValue(val);
 	}
-	LOG_MSG("CONFIG: Unknown option %s", name.c_str());
+	LOG_WARNING("CONFIG: Unknown option %s", name.c_str());
 	return false;
 }
 
@@ -736,9 +786,10 @@ void Section_prop::PrintData(FILE* outfile) const {
 	}
 }
 
-string Section_prop::GetPropValue(string const& _property) const {
-	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if (!strcasecmp((*tel)->propname.c_str(),_property.c_str())){
+string Section_prop::GetPropValue(const std::string &_property) const
+{
+	for (const_it tel = properties.begin(); tel != properties.end(); ++tel) {
+		if (!strcasecmp((*tel)->propname.c_str(), _property.c_str())) {
 			return (*tel)->GetValue().ToString();
 		}
 	}
@@ -887,6 +938,42 @@ Section_line *Config::AddSection_line(const char *section_name, SectionFunction 
 	return blah;
 }
 
+// Move assignment operator
+Config &Config::operator=(Config &&source) noexcept
+{
+	if (this == &source)
+		return *this;
+
+	// Move each member
+	cmdline                      = std::move(source.cmdline);
+	sectionlist                  = std::move(source.sectionlist);
+	_start_function              = std::move(source._start_function);
+	secure_mode                  = std::move(source.secure_mode);
+	startup_params               = std::move(source.startup_params);
+	configfiles                  = std::move(source.configfiles);
+	configFilesCanonical         = std::move(source.configFilesCanonical);
+	overwritten_autoexec_section = std::move(source.overwritten_autoexec_section);
+	overwritten_autoexec_conf    = std::move(source.overwritten_autoexec_conf);
+
+	// Hollow-out the source
+	source.cmdline                      = {};
+	source.overwritten_autoexec_section = {};
+	source.overwritten_autoexec_conf    = {};
+	source._start_function              = {};
+	source.secure_mode                  = {};
+	source.startup_params               = {};
+	source.configfiles                  = {};
+	source.configFilesCanonical         = {};
+
+	return *this;
+}
+
+// Move constructor, leverages move by assignment
+Config::Config(Config &&source) noexcept
+{
+	*this = std::move(source);
+}
+
 void Config::Init() const
 {
 	for (const auto &sec : sectionlist)
@@ -983,18 +1070,26 @@ const Section_line &Config::GetOverwrittenAutoexecSection() const
 
 bool Config::ParseConfigFile(const std::string &type, const std::string &configfilename)
 {
+	std::error_code ec;
+	const std_fs::path cfg_path = configfilename;
+	const auto canonical_path = std_fs::canonical(cfg_path, ec);
+	if (ec)
+		return false;
+	
+	if (contains(configFilesCanonical, canonical_path)) {
+		LOG_INFO("CONFIG: Skipping duplicate config file '%s'", 
+			configfilename.c_str());
+		return true;
+	}
 	// static bool first_configfile = true;
-	ifstream in(configfilename);
+	ifstream in(canonical_path);
 	if (!in)
 		return false;
 	configfiles.push_back(configfilename);
+	configFilesCanonical.push_back(canonical_path);
 
 	// Get directory from configfilename, used with relative paths.
-	current_config_dir = configfilename;
-	auto split_pos = current_config_dir.rfind(CROSS_FILESPLIT);
-	if (split_pos == std::string::npos)
-		split_pos = 0; // No directory then erase string
-	current_config_dir.erase(split_pos);
+	current_config_dir = canonical_path.parent_path().string();
 
 	string gegevens;
 	Section *currentsection = nullptr;
@@ -1109,12 +1204,8 @@ Verbosity Config::GetStartupVerbosity() const
 
 	if (user_choice == "high")
 		return Verbosity::High;
-	if (user_choice == "medium")
-		return Verbosity::Medium;
 	if (user_choice == "low")
 		return Verbosity::Low;
-	if (user_choice == "splash_only")
-		return Verbosity::SplashOnly;
 	if (user_choice == "quiet")
 		return Verbosity::Quiet;
 	if (user_choice == "auto")
@@ -1127,25 +1218,30 @@ Verbosity Config::GetStartupVerbosity() const
 	return Verbosity::High;
 }
 
-bool CommandLine::FindExist(char const * const name,bool remove) {
+bool CommandLine::FindExist(const char *name, bool remove)
+{
 	cmd_it it;
 	if (!(FindEntry(name,it,false))) return false;
 	if (remove) cmds.erase(it);
 	return true;
 }
 
-bool CommandLine::FindInt(char const * const name,int & value,bool remove) {
-	cmd_it it,it_next;
-	if (!(FindEntry(name,it,true))) return false;
+bool CommandLine::FindInt(const char *name, int &value, bool remove)
+{
+	cmd_it it, it_next;
+	if (!(FindEntry(name, it, true)))
+		return false;
 	it_next=it;++it_next;
 	value=atoi((*it_next).c_str());
 	if (remove) cmds.erase(it,++it_next);
 	return true;
 }
 
-bool CommandLine::FindString(char const * const name,std::string & value,bool remove) {
-	cmd_it it,it_next;
-	if (!(FindEntry(name,it,true))) return false;
+bool CommandLine::FindString(const char *name, std::string &value, bool remove)
+{
+	cmd_it it, it_next;
+	if (!(FindEntry(name, it, true)))
+		return false;
 	it_next=it;++it_next;
 	value=*it_next;
 	if (remove) cmds.erase(it,++it_next);
@@ -1179,7 +1275,8 @@ bool CommandLine::HasExecutableName() const
 	return false;
 }
 
-bool CommandLine::FindEntry(char const * const name,cmd_it & it,bool neednext) {
+bool CommandLine::FindEntry(const char *name, cmd_it &it, bool neednext)
+{
 	for (it = cmds.begin(); it != cmds.end(); ++it) {
 		if (!strcasecmp((*it).c_str(),name)) {
 			cmd_it itnext=it;++itnext;
@@ -1202,9 +1299,12 @@ bool CommandLine::FindStringBegin(char const* const begin,std::string & value, b
 	return false;
 }
 
-bool CommandLine::FindStringRemain(char const * const name,std::string & value) {
-	cmd_it it;value.clear();
-	if (!FindEntry(name,it)) return false;
+bool CommandLine::FindStringRemain(const char *name, std::string &value)
+{
+	cmd_it it;
+	value.clear();
+	if (!FindEntry(name, it))
+		return false;
 	++it;
 	for (;it != cmds.end();++it) {
 		value += " ";
@@ -1217,9 +1317,11 @@ bool CommandLine::FindStringRemain(char const * const name,std::string & value) 
  * Allowing /C dir and /Cdir
  * Restoring quotes back into the commands so command /C mount d "/tmp/a b" works as intended
  */
-bool CommandLine::FindStringRemainBegin(char const * const name,std::string & value) {
-	cmd_it it;value.clear();
-	if (!FindEntry(name,it)) {
+bool CommandLine::FindStringRemainBegin(const char *name, std::string &value)
+{
+	cmd_it it;
+	value.clear();
+	if (!FindEntry(name, it)) {
 		size_t len = strlen(name);
 			for (it = cmds.begin();it != cmds.end();++it) {
 				if (strncasecmp(name,(*it).c_str(),len)==0) {
@@ -1321,30 +1423,6 @@ int CommandLine::GetParameterFromList(const char* const params[], std::vector<st
 	}
 
 	return retval;
-/*
-bool CommandLine::FindEntry(char const * const name,cmd_it & it,bool neednext) {
-	for (it=cmds.begin();it!=cmds.end();it++) {
-		if (!strcasecmp((*it).c_str(),name)) {
-			cmd_it itnext=it;itnext++;
-			if (neednext && (itnext==cmds.end())) return false;
-			return true;
-		}
-	}
-	return false;
-*/
-
-
-/*
-	cmd_it it=cmds.begin();value=(*it++);
-	while(it != cmds.end()) {
-		if(params.
-
-		it++;
-	}
-*/
-	// find next parameter
-	//return -1;
-
 }
 
 CommandLine::CommandLine(int argc, char const *const argv[])
@@ -1359,7 +1437,7 @@ CommandLine::CommandLine(int argc, char const *const argv[])
 	}
 }
 
-Bit16u CommandLine::Get_arglength()
+uint16_t CommandLine::Get_arglength()
 {
 	if (cmds.empty())
 		return 0;
@@ -1369,7 +1447,7 @@ Bit16u CommandLine::Get_arglength()
 		total_length += cmd.size() + 1;
 
 	if (total_length > UINT16_MAX) {
-		LOG_MSG("SETUP: Command line length too long, truncating");
+		LOG_WARNING("SETUP: Command line length too long, truncating");
 		total_length = UINT16_MAX;
 	}
 	return static_cast<uint16_t>(total_length);
@@ -1413,6 +1491,50 @@ void CommandLine::Shift(unsigned int amount) {
 	}
 }
 
+const std::string &SETUP_GetLanguage()
+{
+	static bool lang_is_cached = false;
+	static std::string lang = {};
+	if (lang_is_cached)
+		return lang;
+
+	// Did the user provide a language on the command line?
+	(void)control->cmdline->FindString("-lang", lang, true);
+
+	// Is a language provided in the conf file?
+	if (lang.empty()) {
+		const auto section = control->GetSection("dosbox");
+		assert(section);
+		lang = static_cast<const Section_prop *>(section)->Get_string(
+		        "language");
+	}
+	// Check the LANG environment variable
+	if (lang.empty()) {
+		const char *envlang = getenv("LANG");
+		if (envlang) {
+			lang = envlang;
+			clear_language_if_default(lang);
+		}
+	}
+	// Query the OS using OS-specific calls
+	if (lang.empty()) {
+		lang = get_language_from_os();
+		clear_language_if_default(lang);
+	}
+
+	// Drop the dialect part of the language
+	// (e.g. "en_GB.UTF8" -> "en")
+	if (lang.size() > 2) {
+		lang = lang.substr(0, 2);
+	}
+
+	// return it as lowercase
+	lowcase(lang);
+
+	lang_is_cached = true;
+	return lang;
+}
+
 // Parse the user's configuration files starting with the primary, then custom
 // -conf's, and finally the local dosbox.conf
 void SETUP_ParseConfigFiles(const std::string &config_path)
@@ -1438,8 +1560,8 @@ void SETUP_ParseConfigFiles(const std::string &config_path)
 		if (!control->ParseConfigFile("custom", config_file)) {
 			// try to load it from the user directory
 			if (!control->ParseConfigFile("custom", config_path + config_file)) {
-				LOG_MSG("CONFIG: Can't open custom conf file: %s",
-				        config_file.c_str());
+				LOG_WARNING("CONFIG: Can't open custom conf file: %s",
+				            config_file.c_str());
 			}
 		}
 	}
@@ -1458,4 +1580,87 @@ void SETUP_ParseConfigFiles(const std::string &config_path)
 						config_combined.c_str());
 		}
 	}
+}
+
+static char return_msg[200];
+const char *SetProp(std::vector<std::string> &pvars) {
+	*return_msg = 0;
+	// attempt to split off the first word
+	std::string::size_type spcpos = pvars[0].find_first_of(' ');
+	std::string::size_type equpos = pvars[0].find_first_of('=');
+
+	if ((equpos != std::string::npos) &&
+		((spcpos == std::string::npos) || (equpos < spcpos))) {
+		// If we have a '=' possibly before a ' ' split on the =
+		pvars.insert(pvars.begin()+1,pvars[0].substr(equpos+1));
+		pvars[0].erase(equpos);
+		// As we had a = the first thing must be a property now
+		Section* sec=control->GetSectionFromProperty(pvars[0].c_str());
+		if (sec) pvars.insert(pvars.begin(),std::string(sec->GetName()));
+		else {
+			safe_sprintf(return_msg, MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
+			return return_msg;
+		}
+		// order in the vector should be ok now
+	} else {
+		if ((spcpos != std::string::npos) &&
+			((equpos == std::string::npos) || (spcpos < equpos))) {
+			// ' ' before a possible '=', split on the ' '
+			pvars.insert(pvars.begin()+1,pvars[0].substr(spcpos+1));
+			pvars[0].erase(spcpos);
+		}
+		// check if the first parameter is a section or property
+		Section* sec = control->GetSection(pvars[0].c_str());
+		if (!sec) {
+			// not a section: little duplicate from above
+			Section* sec=control->GetSectionFromProperty(pvars[0].c_str());
+			if (sec) pvars.insert(pvars.begin(),std::string(sec->GetName()));
+			else {
+				safe_sprintf(return_msg, MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
+				return return_msg;
+			}
+		} else {
+			// first of pvars is most likely a section, but could still be gus
+			// have a look at the second parameter
+			if (pvars.size() < 2) {
+				safe_strcpy(return_msg, MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
+				return return_msg;
+			}
+			std::string::size_type spcpos2 = pvars[1].find_first_of(' ');
+			std::string::size_type equpos2 = pvars[1].find_first_of('=');
+			if ((equpos2 != std::string::npos) &&
+				((spcpos2 == std::string::npos) || (equpos2 < spcpos2))) {
+				// split on the =
+				pvars.insert(pvars.begin()+2,pvars[1].substr(equpos2+1));
+				pvars[1].erase(equpos2);
+			} else if ((spcpos2 != std::string::npos) &&
+				((equpos2 == std::string::npos) || (spcpos2 < equpos2))) {
+				// split on the ' '
+				pvars.insert(pvars.begin()+2,pvars[1].substr(spcpos2+1));
+				pvars[1].erase(spcpos2);
+			}
+			// is this a property?
+			Section* sec2 = control->GetSectionFromProperty(pvars[1].c_str());
+			if (!sec2) {
+				// not a property,
+				Section* sec3 = control->GetSectionFromProperty(pvars[0].c_str());
+				if (sec3) {
+					// section and property name are identical
+					pvars.insert(pvars.begin(),pvars[0]);
+				} // else has been checked above already
+			}
+		}
+	}
+	if (pvars.size() < 3) {
+		safe_strcpy(return_msg, MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
+		return return_msg;
+	}
+	// check if the property actually exists in the section
+	Section* sec2 = control->GetSectionFromProperty(pvars[1].c_str());
+	if (!sec2) {
+		safe_sprintf(return_msg, MSG_Get("PROGRAM_CONFIG_NO_PROPERTY"),
+			pvars[1].c_str(),pvars[0].c_str());
+		return return_msg;
+	}
+	return return_msg;
 }

@@ -135,9 +135,8 @@ enum KBD_KEYS {
 	KBD_LAST
 };
 
-//--Modified 2011-04-26 by Alun Bestor to make enum declaration C-compatible
+// Boxer exposes this enum through Objective-C++ bridge headers.
 typedef enum KBD_KEYS KBD_KEYS;
-//--End of modifications
 
 void KEYBOARD_ClrBuffer(void);
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed);

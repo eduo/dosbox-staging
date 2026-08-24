@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2017-2020  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -39,10 +39,10 @@
 #include <stdarg.h>
 #endif
 
-typedef Bit16s stream_sample_t;
+typedef int16_t stream_sample_t;
 
-typedef Bit8u u8;
-typedef Bit32u u32;
+typedef uint8_t u8;
+typedef uint32_t u32;
 
 class device_t;
 struct machine_config;
@@ -102,8 +102,9 @@ struct machine_config {
 typedef int device_type;
 
 class device_t {
-	u32 clockRate;
+	u32 clockRate = 0;
 public:
+	const char *shortName = nullptr;
 	struct machine_t {
 		int describe_context() const {
 			return 0;
@@ -141,11 +142,20 @@ public:
 	void save_item(int, [[maybe_unused]] int blah= 0) {
 	}
 
-	device_t(const machine_config & /* mconfig */, [[maybe_unused]] device_type type, [[maybe_unused]] const char *tag, [[maybe_unused]] device_t *owner, u32 _clock) : clockRate( _clock ) {
-	}
+	device_t(const machine_config & /* mconfig */,
+	         [[maybe_unused]] device_type type,
+	         const char *short_name,
+	         [[maybe_unused]] device_t *owner,
+	         u32 _clock)
+	        : clockRate(_clock),
+	          shortName(short_name)
+	{}
 
 	virtual ~device_t() {
 	}
+	// prevent copying and assignment
+	device_t(const device_t &) = delete;
+	device_t &operator=(const device_t &) = delete;
 };
 
 #define auto_alloc_array_clear(m, t, c) calloc(c, sizeof(t) )

@@ -2,7 +2,7 @@ name: Linux builds
 
 on: [push, pull_request]
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -16,61 +16,57 @@ jobs:
   build_ubuntu:
     name: ${{ matrix.conf.name }}
     runs-on: ${{ matrix.conf.os }}
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       matrix:
         conf:
-          - name: Clang, Ubuntu 20.04
+          - name: GCC 10, Ubuntu 20.04
             os: ubuntu-20.04
-            packages: clang
-            build_flags: -Dunit_tests=disabled --native-file=.github/meson/native-clang.ini
+            packages: g++-10
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled --native-file=.github/meson/native-gcc-10.ini
             max_warnings: 0
 
-          - name: GCC, Ubuntu 20.04
+          - name: Clang 12, Ubuntu 20.04
             os: ubuntu-20.04
-            build_flags: -Dunit_tests=disabled
+            packages: clang-12
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled --native-file=.github/meson/native-clang-12.ini
             max_warnings: 0
 
           - name: GCC, Ubuntu 18.04
             os: ubuntu-18.04
-            build_flags: -Dunit_tests=disabled
-            max_warnings: 0
-
-          - name: GCC 7, Ubuntu 18.04
-            os: ubuntu-18.04
-            packages: g++-7
-            build_flags: -Dunit_tests=disabled --native-file=.github/meson/native-gcc-7.ini
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled --native-file=.github/meson/native-gcc-9.ini
             max_warnings: 0
 
           - name: GCC, +tests
             os: ubuntu-20.04
+            build_flags: -Dbuildtype=debug
             run_tests: true
             max_warnings: -1
 
           - name: GCC, +debugger
             os: ubuntu-20.04
-            build_flags: -Dunit_tests=disabled -Denable_debugger=normal
+            build_flags: -Denable_debugger=normal
             max_warnings: 0
 
           - name: GCC, -dyn-x86
             os: ubuntu-20.04
-            build_flags: -Dunit_tests=disabled -Ddynamic_core=dynrec
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled -Ddynamic_core=dynrec
             max_warnings: 0
 
           - name: GCC, -dyn-x86, +debugger
             os: ubuntu-20.04
-            build_flags: -Dunit_tests=disabled -Ddynamic_core=dynrec -Denable_debugger=normal
+            build_flags: -Ddynamic_core=dynrec -Dunit_tests=disabled -Denable_debugger=normal
             max_warnings: 0
 
           - name: GCC, -network
             os: ubuntu-20.04
-            build_flags: -Dunit_tests=disabled -Duse_sdl2_net=false -Duse_slirp=false
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled -Duse_sdl2_net=false -Duse_slirp=false
             max_warnings: 0
 
           - name: GCC, minimum build
             os: ubuntu-20.04
             build_flags: >-
-              --wrap-mode=nofallback
+              -Dbuildtype=debug
               -Dunit_tests=disabled
               -Duse_alsa=false
               -Duse_fluidsynth=false
@@ -84,13 +80,25 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
-      - run:  sudo apt-get update
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get update
+          # use the following to force full upgrades
+          # sudo apt-get -y upgrade
+          # sudo apt-get -y --with-new-pkgs upgrade
+          # sudo apt-get -y install -y aptitude
+          # echo -e "n\ny\ny" | sudo aptitude -y -f full-upgrade
+          # sudo apt-get update
+          # sudo apt-get -y upgrade
 
       - name: Install dependencies (minimum set)
         if:   matrix.conf.min_dependencies
         run: |
-          sudo apt-get install -y build-essential ccache libsdl2-dev libopusfile-dev python3-setuptools
+          sudo apt-get install -y build-essential ccache libsdl2-dev libopusfile-dev libspeexdsp-dev python3-setuptools
           sudo pip3 install --upgrade meson ninja
 
       - name: Install dependencies
@@ -98,7 +106,7 @@ jobs:
         run: |
           sudo apt-get install -y \
             ${{ matrix.conf.packages }} \
-            $(cat ./.github/packages/${{ matrix.conf.os }}-apt.txt)
+            $(cat packages/${{ matrix.conf.os }}-apt.txt)
           sudo pip3 install --upgrade meson ninja
 
       - name:  Prepare compiler cache
@@ -133,7 +141,7 @@ jobs:
       - name: Build
         run: |
           set -xo pipefail
-          ninja -C build |& tee build.log
+          meson compile -C build |& tee build.log
           ccache -s
 
       - name: Run tests
@@ -150,16 +158,19 @@ jobs:
   build_linux_release:
     name: Release build
     runs-on: ubuntu-18.04
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - run:  sudo apt-get update
 
       - name: Install dependencies
         run: |
           sudo apt-get install -y tree \
-            $(cat ./.github/packages/ubuntu-18.04-apt.txt)
+            $(cat packages/ubuntu-18.04-apt.txt)
           sudo pip3 install --upgrade meson ninja
 
       # Workaround frequent HTTPS-based connectivity issues
@@ -197,23 +208,19 @@ jobs:
         run: |
           set -x
           git fetch --prune --unshallow
-          git fetch --tags --force
-          export VERSION=$(git describe --abbrev=0)
+          export VERSION=$(git describe --abbrev=5)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Setup release build
         run: |
           meson setup \
             --wrap-mode=forcefallback \
-            -Dbuildtype=release \
-            -Ddefault_library=static \
-            -Db_asneeded=true \
-            -Db_lto=true \
-            -Dfluidsynth:try-static-deps=true \
+            -Db_lto=true -Db_lto_threads=$(nproc) \
+            --native-file=.github/meson/native-gcc-9.ini \
             build
 
       - name: Build
-        run:  ninja -C build
+        run:  meson compile -C build
 
       - name: Package
         run: |
@@ -270,12 +277,14 @@ jobs:
     runs-on: ubuntu-18.04
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - name: Generate changelog
         run: |
           set +x
           git fetch --unshallow
-          git fetch --tags --force
           VERSION=$(git describe --abbrev=4)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           NEWEST_TAG=$(git describe --abbrev=0)

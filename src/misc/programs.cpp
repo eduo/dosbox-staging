@@ -59,9 +59,9 @@ constexpr int callback_pos = 12;
 // Persistent program containers
 using comdata_t = std::vector<uint8_t>;
 static std::vector<comdata_t> internal_progs_comdata;
-static std::vector<PROGRAMS_Main *> internal_progs;
+static std::vector<PROGRAMS_Creator> internal_progs;
 
-void PROGRAMS_MakeFile(const char *name, PROGRAMS_Main *main)
+void PROGRAMS_MakeFile(const char *name, PROGRAMS_Creator creator)
 {
 	comdata_t comdata(exe_block.begin(), exe_block.end());
 	comdata.at(callback_pos) = static_cast<uint8_t>(call_program & 0xff);
@@ -80,13 +80,16 @@ void PROGRAMS_MakeFile(const char *name, PROGRAMS_Main *main)
 
 	// Register the program's main pointer
 	// NOTE: This step must come after the index is saved in the COM data
-	internal_progs.push_back(main);
+	internal_progs.emplace_back(creator);
+
+	// Register help for command
+	creator()->AddToHelpList();
 }
 
 static Bitu PROGRAMS_Handler(void) {
 	/* This sets up everything for a program start up call */
-	Bitu size=sizeof(Bit8u);
-	Bit8u index;
+	Bitu size=sizeof(uint8_t);
+	uint8_t index;
 
 	// Sanity check the exec_block size before down-casting
 	constexpr auto exec_block_size = exe_block.size();
@@ -97,12 +100,9 @@ static Bitu PROGRAMS_Handler(void) {
 	                         256 + static_cast<uint16_t>(exec_block_size));
 	HostPt writer=(HostPt)&index;
 	for (;size>0;size--) *writer++=mem_readb(reader++);
-	Program * new_program;
-	if (index >= internal_progs.size()) E_Exit("something is messing with the memory");
-	PROGRAMS_Main * handler = internal_progs[index];
-	(*handler)(&new_program);
+	const PROGRAMS_Creator& creator = internal_progs.at(index);
+	const auto new_program = creator();
 	new_program->Run();
-	delete new_program;
 	return CBRET_NONE;
 }
 
@@ -154,7 +154,7 @@ bool Program::SuppressWriteOut(const char *format)
 	static bool encountered_executable = false;
 	if (encountered_executable)
 		return false;
-	if (control->GetStartupVerbosity() >= Verbosity::SplashOnly)
+	if (control->GetStartupVerbosity() >= Verbosity::Low)
 		return false;
 	if (!control->cmdline->HasExecutableName())
 		return false;
@@ -179,10 +179,10 @@ void Program::WriteOut(const char *format, ...)
 	vsnprintf(buf,2047,format,msg);
 	va_end(msg);
 
-	Bit16u size = (Bit16u)strlen(buf);
+	uint16_t size = (uint16_t)strlen(buf);
 	dos.internal_output=true;
-	for (Bit16u i = 0; i < size; i++) {
-		Bit8u out;Bit16u s=1;
+	for (uint16_t i = 0; i < size; i++) {
+		uint8_t out;uint16_t s=1;
 		if (buf[i] == 0xA && last_written_character != 0xD) {
 			out = 0xD;DOS_WriteFile(STDOUT,&out,&s);
 		}
@@ -191,7 +191,7 @@ void Program::WriteOut(const char *format, ...)
 	}
 	dos.internal_output=false;
 
-//	DOS_WriteFile(STDOUT,(Bit8u *)buf,&size);
+//	DOS_WriteFile(STDOUT,(uint8_t *)buf,&size);
 }
 
 void Program::WriteOut(const char *format, const char *arguments)
@@ -202,10 +202,10 @@ void Program::WriteOut(const char *format, const char *arguments)
 	char buf[2048];
 	sprintf(buf,format,arguments);
 
-	Bit16u size = (Bit16u)strlen(buf);
+	uint16_t size = (uint16_t)strlen(buf);
 	dos.internal_output=true;
-	for (Bit16u i = 0; i < size; i++) {
-		Bit8u out;Bit16u s=1;
+	for (uint16_t i = 0; i < size; i++) {
+		uint8_t out;uint16_t s=1;
 		if (buf[i] == 0xA && last_written_character != 0xD) {
 			out = 0xD;DOS_WriteFile(STDOUT,&out,&s);
 		}
@@ -219,11 +219,11 @@ void Program::WriteOut_NoParsing(const char * format) {
 	if (SuppressWriteOut(format))
 		return;
 
-	Bit16u size = (Bit16u)strlen(format);
+	uint16_t size = (uint16_t)strlen(format);
 	char const* buf = format;
 	dos.internal_output=true;
-	for (Bit16u i = 0; i < size; i++) {
-		Bit8u out;Bit16u s=1;
+	for (uint16_t i = 0; i < size; i++) {
+		uint8_t out;uint16_t s=1;
 		if (buf[i] == 0xA && last_written_character != 0xD) {
 			out = 0xD;DOS_WriteFile(STDOUT,&out,&s);
 		}
@@ -232,7 +232,7 @@ void Program::WriteOut_NoParsing(const char * format) {
 	}
 	dos.internal_output=false;
 
-//	DOS_WriteFile(STDOUT,(Bit8u *)format,&size);
+//	DOS_WriteFile(STDOUT,(uint8_t *)format,&size);
 }
 
 void Program::ResetLastWrittenChar(char c)
@@ -310,7 +310,7 @@ bool Program::SetEnv(const char * entry,const char * new_string) {
 	
 	//Get size of environment.
 	DOS_MCB mcb(psp->GetEnvironment() - 1);
-	Bit16u envsize = mcb.GetSize()*16;
+	uint16_t envsize = mcb.GetSize()*16;
 
 
 	PhysPt env_write = env_read;
@@ -344,11 +344,28 @@ bool Program::SetEnv(const char * entry,const char * new_string) {
 	return true;
 }
 
+bool Program::HelpRequested() {
+	return cmd->FindExist("/?", false) || cmd->FindExist("-h", false) ||
+	       cmd->FindExist("--help", false);
+}
+
+void Program::AddToHelpList() {
+	if (help_detail.name.size())
+		HELP_AddToHelpList(help_detail.name, help_detail);
+}
+
 bool MSG_Write(const char *);
 void restart_program(std::vector<std::string> & parameters);
 
 class CONFIG final : public Program {
 public:
+	CONFIG()
+	{
+		help_detail = {HELP_Filter::Common,
+		               HELP_Category::Dosbox,
+		               HELP_CmdType::Program,
+		               "CONFIG"};
+	}
 	void Run(void);
 private:
 	void restart(const char* useconfig);
@@ -483,13 +500,13 @@ void CONFIG::Run(void) {
 			[[fallthrough]];
 
 		case P_NOMATCH:
-			WriteOut(MSG_Get("PROGRAM_CONFIG_USAGE"));
+			WriteOut(MSG_Get("SHELL_CMD_CONFIG_HELP_LONG"));
 			return;
 
 		case P_HELP: case P_HELP2: case P_HELP3: {
 			switch(pvars.size()) {
 			case 0:
-				WriteOut(MSG_Get("PROGRAM_CONFIG_USAGE"));
+				WriteOut(MSG_Get("SHELL_CMD_CONFIG_HELP_LONG"));
 				return;
 			case 1: {
 				if (!strcasecmp("sections",pvars[0].c_str())) {
@@ -506,7 +523,7 @@ void CONFIG::Run(void) {
 					// could be a property
 					sec = control->GetSectionFromProperty(pvars[0].c_str());
 					if (!sec) {
-						WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
+						WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
 						return;
 					}
 					pvars.insert(pvars.begin(),std::string(sec->GetName()));
@@ -517,20 +534,22 @@ void CONFIG::Run(void) {
 				// sanity check
 				Section* sec = control->GetSection(pvars[0].c_str());
 				Section* sec2 = control->GetSectionFromProperty(pvars[1].c_str());
-				if (!sec || !sec2 || sec != sec2) {
-					WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
+				if (!sec) {
+					WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
+				} else if (!sec2 || sec != sec2) {
+					WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[1].c_str());
 				}
 				break;
 			}
 			default:
-				WriteOut(MSG_Get("PROGRAM_CONFIG_USAGE"));
+				WriteOut(MSG_Get("SHELL_CMD_CONFIG_HELP_LONG"));
 				return;
 			}	
 			// if we have one value in pvars, it's a section
 			// two values are section + property
 			Section* sec = control->GetSection(pvars[0].c_str());
 			if (sec==NULL) {
-				WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
+				WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
 				return;
 			}
 			Section_prop* psec = dynamic_cast <Section_prop*>(sec);
@@ -592,7 +611,7 @@ void CONFIG::Run(void) {
 							p->propname.c_str(),
 							sec->GetName(),
 							p->GetHelp(), propvalues.c_str(),
-							p->Get_Default_Value().ToString().c_str(),
+							p->GetDefaultValue().ToString().c_str(),
 							p->GetValue().ToString().c_str());
 						// print 'changability'
 						if (p->GetChange() == Property::Changeable::OnlyAtStart) {
@@ -694,7 +713,7 @@ void CONFIG::Run(void) {
 					// no: maybe it's a property?
 					sec = control->GetSectionFromProperty(pvars[0].c_str());
 					if (!sec) {
-						WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
+						WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"), pvars[0].c_str());
 						return;
 					}
 					// it's a property name
@@ -752,102 +771,27 @@ void CONFIG::Run(void) {
 			// add rest of command
 			std::string rest;
 			if (cmd->GetStringRemain(rest)) pvars.push_back(rest);
-
-			// attempt to split off the first word
-			std::string::size_type spcpos = pvars[0].find_first_of(' ');
-			std::string::size_type equpos = pvars[0].find_first_of('=');
-
-			if ((equpos != std::string::npos) && 
-				((spcpos == std::string::npos) || (equpos < spcpos))) {
-				// If we have a '=' possibly before a ' ' split on the =
-				pvars.insert(pvars.begin()+1,pvars[0].substr(equpos+1));
-				pvars[0].erase(equpos);
-				// As we had a = the first thing must be a property now
-				Section* sec=control->GetSectionFromProperty(pvars[0].c_str());
-				if (sec) pvars.insert(pvars.begin(),std::string(sec->GetName()));
-				else {
-					WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
+			const char *result = SetProp(pvars);
+			if (strlen(result)) WriteOut(result);
+			else {
+				Section* tsec = control->GetSection(pvars[0]);
+				// Input has been parsed (pvar[0]=section, [1]=property, [2]=value)
+				// now execute
+				std::string value(pvars[2]);
+				//Due to parsing there can be a = at the start of value.
+				while (value.size() && (value.at(0) ==' ' ||value.at(0) =='=') ) value.erase(0,1);
+				for (Bitu i = 3; i < pvars.size(); i++) value += (std::string(" ") + pvars[i]);
+				if (value.empty() ) {
+					WriteOut(MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
 					return;
 				}
-				// order in the vector should be ok now
-			} else {
-				if ((spcpos != std::string::npos) &&
-					((equpos == std::string::npos) || (spcpos < equpos))) {
-					// ' ' before a possible '=', split on the ' '
-					pvars.insert(pvars.begin()+1,pvars[0].substr(spcpos+1));
-					pvars[0].erase(spcpos);
-				}
-				// check if the first parameter is a section or property
-				Section* sec = control->GetSection(pvars[0].c_str());
-				if (!sec) {
-					// not a section: little duplicate from above
-					Section* sec=control->GetSectionFromProperty(pvars[0].c_str());
-					if (sec) pvars.insert(pvars.begin(),std::string(sec->GetName()));
-					else {
-						WriteOut(MSG_Get("PROGRAM_CONFIG_PROPERTY_ERROR"));
-						return;
-					}
-				} else {
-					// first of pvars is most likely a section, but could still be gus
-					// have a look at the second parameter
-					if (pvars.size() < 2) {
-						WriteOut(MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
-						return;
-					}
-					std::string::size_type spcpos2 = pvars[1].find_first_of(' ');
-					std::string::size_type equpos2 = pvars[1].find_first_of('=');
-					if ((equpos2 != std::string::npos) && 
-						((spcpos2 == std::string::npos) || (equpos2 < spcpos2))) {
-						// split on the =
-						pvars.insert(pvars.begin()+2,pvars[1].substr(equpos2+1));
-						pvars[1].erase(equpos2);
-					} else if ((spcpos2 != std::string::npos) &&
-						((equpos2 == std::string::npos) || (spcpos2 < equpos2))) {
-						// split on the ' '
-						pvars.insert(pvars.begin()+2,pvars[1].substr(spcpos2+1));
-						pvars[1].erase(spcpos2);
-					}
-					// is this a property?
-					Section* sec2 = control->GetSectionFromProperty(pvars[1].c_str());
-					if (!sec2) {
-						// not a property, 
-						Section* sec3 = control->GetSectionFromProperty(pvars[0].c_str());
-						if (sec3) {
-							// section and property name are identical
-							pvars.insert(pvars.begin(),pvars[0]);
-						} // else has been checked above already
-					}
-				}
+				std::string inputline = pvars[1] + "=" + value;
+				tsec->ExecuteDestroy(false);
+				bool change_success = tsec->HandleInputline(inputline.c_str());
+				if (!change_success) WriteOut(MSG_Get("PROGRAM_CONFIG_VALUE_ERROR"),
+                    value.c_str(),pvars[1].c_str());
+				tsec->ExecuteInit(false);
 			}
-			if (pvars.size() < 3) {
-				WriteOut(MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
-				return;
-			}
-			// check if the property actually exists in the section
-			Section* sec2 = control->GetSectionFromProperty(pvars[1].c_str());
-			if (!sec2) {
-				WriteOut(MSG_Get("PROGRAM_CONFIG_NO_PROPERTY"),
-					pvars[1].c_str(),pvars[0].c_str());
-				return;
-			}
-			// Input has been parsed (pvar[0]=section, [1]=property, [2]=value)
-			// now execute
-			Section* tsec = control->GetSection(pvars[0]);
-			std::string value(pvars[2]);
-			//Due to parsing there can be a = at the start of value.
-			while (value.size() && (value.at(0) ==' ' ||value.at(0) =='=') ) value.erase(0,1);
-			for (Bitu i = 3; i < pvars.size(); i++) value += (std::string(" ") + pvars[i]);
-			if (value.empty() ) {
-				WriteOut(MSG_Get("PROGRAM_CONFIG_SET_SYNTAX"));
-				return;
-			}
-			std::string inputline = pvars[1] + "=" + value;
-			
-			tsec->ExecuteDestroy(false);
-			bool change_success = tsec->HandleInputline(inputline.c_str());
-			if (!change_success) WriteOut(MSG_Get("PROGRAM_CONFIG_VALUE_ERROR"),
-				value.c_str(),pvars[1].c_str());
-			tsec->ExecuteInit(false);
 			return;
 		}
 		case P_WRITELANG: case P_WRITELANG2:
@@ -880,11 +824,11 @@ void CONFIG::Run(void) {
 }
 
 
-static void CONFIG_ProgramStart(Program * * make) {
-	*make=new CONFIG;
+std::unique_ptr<Program> CONFIG_ProgramCreate() {
+	return ProgramCreate<CONFIG>();
 }
 
-void PROGRAMS_Destroy(Section*) {
+void PROGRAMS_Destroy([[maybe_unused]] Section* sec) {
 	internal_progs_comdata.clear();
 	internal_progs.clear();
 }
@@ -893,7 +837,6 @@ void PROGRAMS_Init(Section* sec) {
 	/* Setup a special callback to start virtual programs */
 	call_program=CALLBACK_Allocate();
 	CALLBACK_Setup(call_program,&PROGRAMS_Handler,CB_RETF,"internal program");
-	PROGRAMS_MakeFile("CONFIG.COM",CONFIG_ProgramStart);
 
 	// Cleanup -- allows unit tests to run indefinitely & cleanly
 	sec->AddDestroyFunction(&PROGRAMS_Destroy,false);
@@ -910,8 +853,8 @@ void PROGRAMS_Init(Section* sec) {
 	MSG_Add("PROGRAM_CONFIG_FILE_WHICH", "Writing config file %s\n");
 	
 	// help
-	MSG_Add("PROGRAM_CONFIG_USAGE",
-	        "Config tool:\n"
+	MSG_Add("SHELL_CMD_CONFIG_HELP_LONG",
+	        "Adjusts DOSBox Staging's configurable parameters.\n"
 	        "-writeconf or -wc without parameter: write to primary loaded config file.\n"
 	        "-writeconf or -wc with filename: write file to config directory.\n"
 	        "Use -writelang or -wl filename to write the current language strings.\n"
@@ -947,9 +890,6 @@ void PROGRAMS_Init(Section* sec) {
 	MSG_Add("PROGRAM_CONFIG_SECURE_DISALLOW","This operation is not permitted in secure mode.\n");
 	MSG_Add("PROGRAM_CONFIG_SECTION_ERROR", "Section \"%s\" doesn't exist.\n");
 	MSG_Add("PROGRAM_CONFIG_VALUE_ERROR","\"%s\" is not a valid value for property %s.\n");
-	MSG_Add("PROGRAM_CONFIG_PROPERTY_ERROR","No such section or property.\n");
-	MSG_Add("PROGRAM_CONFIG_NO_PROPERTY", "There is no property \"%s\" in section \"%s\".\n");
-	MSG_Add("PROGRAM_CONFIG_SET_SYNTAX","Correct syntax: config -set \"section property\".\n");
 	MSG_Add("PROGRAM_CONFIG_GET_SYNTAX","Correct syntax: config -get \"section property\".\n");
 	MSG_Add("PROGRAM_CONFIG_PRINT_STARTUP", "\nDOSBox was started with the following command line parameters:\n%s\n");
 	MSG_Add("PROGRAM_CONFIG_MISSINGPARAM", "Missing parameter.\n");

@@ -23,14 +23,21 @@
 #include <cstdint>
 #include <cstring>
 
+#include "bitops.h"
+#include "checks.h"
 #include "control.h"
 #include "inout.h"
 #include "mapper.h"
+#include "math_utils.h"
 #include "mem.h"
 #include "pic.h"
 #include "render.h"
-#include "support.h"
 #include "vga.h"
+
+// CHECK_NARROWING();
+
+using namespace bit;
+using namespace bit::literals;
 
 static void write_crtc_index_other(io_port_t, io_val_t value, io_width_t)
 {
@@ -193,7 +200,7 @@ static void write_lightpen(io_port_t port, io_val_t, io_width_t)
 			const auto timeInLine = fmod(timeInFrame, vga.draw.delay.htotal);
 			Bitu current_scanline = (Bitu)(timeInFrame / vga.draw.delay.htotal);
 
-			vga.other.lightpen = (Bit16u)((vga.draw.address_add/2) * (current_scanline/2));
+			vga.other.lightpen = (uint16_t)((vga.draw.address_add/2) * (current_scanline/2));
 			vga.other.lightpen += static_cast<uint16_t>(
 			        (timeInLine / vga.draw.delay.hdend) *
 			        (static_cast<double>(vga.draw.address_add / 2)));
@@ -406,17 +413,17 @@ constexpr uint8_t mono_cga_palettes[8][16][3] = {
                 {0x3f, 0x3f, 0x3b},
         }};
 
-constexpr float get_rgbi_coefficient(const bool is_new_cga, const uint8_t ovescan)
+constexpr float get_rgbi_coefficient(const bool is_new_cga, const uint8_t overscan)
 {
 	const auto r_coefficient = is_new_cga ? 0.10f : 0.0f;
 	const auto g_coefficient = is_new_cga ? 0.22f : 0.0f;
 	const auto b_coefficient = is_new_cga ? 0.07f : 0.0f;
 	const auto i_coefficient = is_new_cga ? 0.32f : 0.28f;
 
-	const auto r = (ovescan & 4) ? r_coefficient : 0.0f;
-	const auto g = (ovescan & 2) ? g_coefficient : 0.0f;
-	const auto b = (ovescan & 1) ? b_coefficient : 0.0f;
-	const auto i = (ovescan & 8) ? i_coefficient : 0.0f;
+	const auto r = (overscan & 4) ? r_coefficient : 0.0f;
+	const auto g = (overscan & 2) ? g_coefficient : 0.0f;
+	const auto b = (overscan & 1) ? b_coefficient : 0.0f;
+	const auto i = (overscan & 8) ? i_coefficient : 0.0f;
 	return r + g + b + i;
 }
 
@@ -559,13 +566,19 @@ static void update_cga16_color_pcjr()
 			const auto G = normalize_and_apply_gamma(Y - 0.2721f * I - 0.6474f * Q);
 			const auto B = normalize_and_apply_gamma(Y - 1.1069f * I + 1.7046f * Q);
 
-			auto to_8bit_without_gamma = [=](float v) -> uint8_t {
-				const auto without_gamma = clamp(powf(v, 1 / gamma), 0.0f, 1.0f);
-				return static_cast<uint8_t>(255 * without_gamma);
+			auto to_linear_rgb = [=](const float v) -> uint8_t {
+				// Only operate on reasonably positive v-values
+				if (!isnormal(v) || v <= 0.0f)
+					return 0;
+				// switch to linear RGB space and scale to the 8-bit range
+				constexpr int max_8bit = UINT8_MAX;
+				const auto linear = powf(v, 1.0f / gamma) * max_8bit;
+				const auto clamped = clamp(iroundf(linear), 0, max_8bit);
+				return check_cast<uint8_t>(clamped);
 			};
-			const auto r = to_8bit_without_gamma(1.5073f * R - 0.3725f * G - 0.0832f * B);
-			const auto g = to_8bit_without_gamma(-0.0275f * R + 0.9350f * G + 0.0670f * B);
-			const auto b = to_8bit_without_gamma(-0.0272f * R - 0.0401f * G + 1.1677f * B);
+			const auto r = to_linear_rgb(1.5073f * R - 0.3725f * G - 0.0832f * B);
+			const auto g = to_linear_rgb(-0.0275f * R + 0.9350f * G + 0.0670f * B);
+			const auto b = to_linear_rgb(-0.0272f * R - 0.0401f * G + 1.1677f * B);
 
 			const uint8_t index = bits | ((x & 1) == 0 ? 0x30 : 0x80) | ((x & 2) == 0 ? 0x40 : 0);
 			RENDER_SetPal(index, r, g, b);
@@ -912,13 +925,13 @@ static void tandy_update_palette() {
 			} else {
 				uint8_t color_set = 0;
 				uint8_t r_mask = 0xf;
-				if (vga.tandy.color_select & 0x10)
-					color_set |= 8; // intensity
-				if (vga.tandy.color_select & 0x20)
-					color_set |= 1; // Cyan Mag. White
-				if (vga.tandy.mode_control & 0x04) { // Cyan Red White
-					color_set |= 1;
-					r_mask &= ~1;
+				if (is(vga.tandy.color_select, b4))
+					set(color_set, b3); // intensity
+				if (is(vga.tandy.color_select, b5))
+					set(color_set, b0); // Cyan Mag. White
+				if (is(vga.tandy.mode_control, b2)) { // Cyan Red White
+					set(color_set, b0);
+					clear(r_mask, b0);
 				}
 				VGA_SetCGA4Table(
 					vga.attr.palette[vga.tandy.color_select&0xf],
@@ -1034,8 +1047,8 @@ static void PCJr_FindMode()
 static void TandyCheckLineMask(void ) {
 	if ( vga.tandy.extended_ram & 1 ) {
 		vga.tandy.line_mask = 0;
-	} else if ( vga.tandy.mode_control & 0x2) {
-		vga.tandy.line_mask |= 1;
+	} else if (is(vga.tandy.mode_control, b1)) {
+		set(vga.tandy.line_mask, b0);
 	}
 	if ( vga.tandy.line_mask ) {
 		vga.tandy.line_shift = 13;
@@ -1055,8 +1068,10 @@ static void write_tandy_reg(uint8_t val)
 			vga.tandy.mode_control=val;
 			VGA_SetBlinking(val & 0x20);
 			PCJr_FindMode();
-			if (val&0x8) vga.attr.disabled &= ~1;
-			else vga.attr.disabled |= 1;
+			if (is(val, b3))
+				clear(vga.attr.disabled, b0);
+			else
+				set(vga.attr.disabled, b0);
 		} else {
 			LOG(LOG_VGAMISC,LOG_NORMAL)("Unhandled Write %2X to tandy reg %X",val,vga.tandy.reg_index);
 		}
@@ -1096,11 +1111,13 @@ static void write_tandy(io_port_t port, io_val_t value, io_width_t)
 	// only receives 8-bit data per its IO port registration
 	switch (port) {
 	case 0x3d8:
-		val &= 0x3f; // only bits 0-6 are used
+		clear(val, b7 | b6); // only bits 0-5 are used
 		if (vga.tandy.mode_control ^ val) {
 			vga.tandy.mode_control = val;
-			if (val&0x8) vga.attr.disabled &= ~1;
-			else vga.attr.disabled |= 1;
+			if (is(val, b3))
+				clear(vga.attr.disabled, b0);
+			else
+				set(vga.attr.disabled, b0);
 			TandyCheckLineMask();
 			VGA_SetBlinking(val & 0x20);
 			TANDY_FindMode();
@@ -1151,9 +1168,10 @@ static void write_pcjr(io_port_t port, io_val_t value, io_width_t)
 			write_tandy_reg(val);
 		else {
 			vga.tandy.reg_index = val;
-			if (vga.tandy.reg_index & 0x10)
-				vga.attr.disabled |= 2;
-			else vga.attr.disabled &= ~2;
+			if (is(vga.tandy.reg_index, b4))
+				set(vga.attr.disabled, b1);
+			else
+				clear(vga.attr.disabled, b1);
 		}
 		vga.tandy.pcjr_flipflop=!vga.tandy.pcjr_flipflop;
 		break;
@@ -1285,35 +1303,35 @@ static void write_hercules(io_port_t port, io_val_t value, io_width_t)
 	case 0x3b8: {
 		// the protected bits can always be cleared but only be set if the
 		// protection bits are set
-		if (vga.herc.mode_control&0x2) {
+		if (is(vga.herc.mode_control, b1)) {
 			// already set
-			if (!(val&0x2)) {
-				vga.herc.mode_control &= ~0x2;
+			if (cleared(val, b1)) {
+				clear(vga.herc.mode_control, b1);
 				VGA_SetMode(M_HERC_TEXT);
 			}
 		} else {
 			// not set, can only set if protection bit is set
-			if ((val & 0x2) && (vga.herc.enable_bits & 0x1)) {
-				vga.herc.mode_control |= 0x2;
+			if (is(val, b1) && is(vga.herc.enable_bits, b0)) {
+				set(vga.herc.mode_control, b1);
 				VGA_SetMode(M_HERC_GFX);
 			}
 		}
-		if (vga.herc.mode_control&0x80) {
-			if (!(val&0x80)) {
-				vga.herc.mode_control &= ~0x80;
+		if (is(vga.herc.mode_control, b7)) {
+			if (cleared(val, b7)) {
+				clear(vga.herc.mode_control, b7);
 				vga.tandy.draw_base = &vga.mem.linear[0];
 			}
 		} else {
-			if ((val & 0x80) && (vga.herc.enable_bits & 0x2)) {
-				vga.herc.mode_control |= 0x80;
-				vga.tandy.draw_base = &vga.mem.linear[32*1024];
+			if (is(val, b7) && is(vga.herc.enable_bits, b1)) {
+				set(vga.herc.mode_control, b7);
+				vga.tandy.draw_base = &vga.mem.linear[32 * 1024];
 			}
 		}
-		vga.draw.blinking = (val&0x20)!=0;
-		vga.herc.mode_control &= 0x82;
-		vga.herc.mode_control |= val & ~0x82;
+		vga.draw.blinking = is(val, b5);
+		retain(vga.herc.mode_control, b7 | b1);
+		set(vga.herc.mode_control, mask_off(val, b7 | b1));
 		break;
-		}
+	}
 	case 0x3bf:
 		if ( vga.herc.enable_bits ^ val) {
 			vga.herc.enable_bits=val;
@@ -1425,53 +1443,46 @@ void VGA_SetupOther()
 		MAPPER_AddHandler(Composite, SDL_SCANCODE_F12, 0, "cgacomp",
 		                  "CGA Comp");
 	}
-	if (machine == MCH_HERC) {
-		constexpr uint16_t base = 0x3b0;
-		for (uint8_t i = 0; i < 4; ++i) {
-			// The registers are repeated as the address is not decoded properly;
-			// The official ports are 3b4, 3b5
-			const uint16_t index_port = base + i * 2u;
+
+	auto register_crtc_port_handlers_at_base = [](const io_port_t base) {
+		for (io_port_t i = 0; i < 4; ++i) {
+			const auto index_port = check_cast<io_port_t>(base + 2 * i);
 			IO_RegisterWriteHandler(index_port, write_crtc_index_other, io_width_t::byte);
 			IO_RegisterReadHandler(index_port, read_crtc_index_other, io_width_t::byte);
 
-			const uint16_t data_port = index_port + 1u;
+			const auto data_port = check_cast<io_port_t>(index_port + 1);
 			IO_RegisterWriteHandler(data_port, write_crtc_data_other, io_width_t::byte);
 			IO_RegisterReadHandler(data_port, read_crtc_data_other, io_width_t::byte);
 		}
-		vga.herc.enable_bits=0;
-		vga.herc.mode_control=0xa; // first mode written will be text mode
+	};
+
+	if (machine == MCH_HERC) {
+		vga.herc.enable_bits = 0;
+		vga.herc.mode_control = 0xa; // first mode written will be text mode
 		vga.crtc.underline_location = 13;
 		IO_RegisterWriteHandler(0x3b8, write_hercules, io_width_t::byte);
 		IO_RegisterWriteHandler(0x3bf, write_hercules, io_width_t::byte);
 		IO_RegisterReadHandler(0x3ba, read_herc_status, io_width_t::byte);
+		register_crtc_port_handlers_at_base(0x3b0);
 	} else if (!IS_EGAVGA_ARCH) {
-		constexpr uint16_t base = 0x3d0;
-		for (uint8_t port_ct = 0; port_ct < 4; ++port_ct) {
-			IO_RegisterWriteHandler(base + port_ct * 2, write_crtc_index_other, io_width_t::byte);
-			IO_RegisterWriteHandler(base + port_ct * 2 + 1, write_crtc_data_other, io_width_t::byte);
-			IO_RegisterReadHandler(base + port_ct * 2, read_crtc_index_other, io_width_t::byte);
-			IO_RegisterReadHandler(base + port_ct * 2 + 1, read_crtc_data_other, io_width_t::byte);
-		}
+		register_crtc_port_handlers_at_base(0x3d0);
 	}
 }
 
-
-//--Added 2013-02-10 by Alun Bestor to give Boxer control over Hercules graphics options
-Bit8u boxer_herculesTintMode()
+uint8_t boxer_herculesTintMode()
 {
-    return herc_pal;
+    return static_cast<uint8_t>(hercules_palette);
 }
 
-void boxer_setHerculesTintMode(Bit8u mode)
+void boxer_setHerculesTintMode(uint8_t mode)
 {
-    if (herc_pal != mode)
-    {
-        herc_pal = mode % 3;
-        if (machine == MCH_HERC)
-        {
-            Herc_Palette();
-            VGA_DAC_CombineColor(1,7);
-        }
+    if (static_cast<uint8_t>(hercules_palette) == mode)
+        return;
+
+    hercules_palette = MonochromePalette(mode % 3);
+    if (machine == MCH_HERC) {
+        VGA_SetHerculesPalette();
+        VGA_DAC_CombineColor(1, 7);
     }
 }
 
@@ -1482,39 +1493,32 @@ double boxer_CGACompositeHueOffset()
 
 void boxer_setCGACompositeHueOffset(double offset)
 {
-    if (offset != hue.get())
-    {
-        hue.set(offset);
-        if (machine == MCH_CGA)
-        {
-            update_cga16_color();
-        }
-    }
+    if (offset == hue.get())
+        return;
+
+    hue.set(offset);
+    if (machine == MCH_CGA)
+        update_cga16_color();
 }
 
-//--Added 2019-10-18 by C.W. Betts to give Boxer control over CGA composite mode
-Bit8u boxer_CGAComponentMode(void)
+uint8_t boxer_CGAComponentMode()
 {
-	return (Bit8u)cga_comp;
+    return static_cast<uint8_t>(cga_comp);
 }
 
-void boxer_setCGAComponentMode(Bit8u newCGA)
+void boxer_setCGAComponentMode(uint8_t mode)
 {
-	cga_comp = COMPOSITE_STATE(newCGA);
-	if ((Bit8u)cga_comp>2) cga_comp=COMPOSITE_STATE::AUTO;
-	if (vga.tandy.mode_control & 0x2) {
-		write_cga(0x3d8,vga.tandy.mode_control, io_width_t::byte);
-	}
+    cga_comp = COMPOSITE_STATE(mode);
+    if (static_cast<uint8_t>(cga_comp) > 2)
+        cga_comp = COMPOSITE_STATE::AUTO;
+    if (vga.tandy.mode_control.is_tandy_border_enabled)
+        write_cga(0x3d8, vga.tandy.mode_control.data, io_width_t::byte);
 }
-//--End of modifications
 
-//--Added 2022-03-25 by C.W. Betts to give Boxer information about a display's refresh rate.
-//TODO: stub!
-int boxer_GetDisplayRefreshRate(void)
+int boxer_GetDisplayRefreshRate()
 {
-	return 60;
+    return 60;
 }
-//--End of modifications
 
 static void composite_init(Section *sec)
 {

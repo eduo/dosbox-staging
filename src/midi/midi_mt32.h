@@ -2,7 +2,7 @@
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
  *  Copyright (C) 2012-2021  sergm <sergm@bigmir.net>
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -29,6 +29,8 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -37,7 +39,9 @@
 
 #include "mixer.h"
 #include "rwqueue.h"
-#include "soft_limiter.h"
+
+class LASynthModel;
+using model_and_dir_t = std::pair<const LASynthModel *, std::string>;
 
 static_assert(MT32EMU_VERSION_MAJOR > 2 ||
                       (MT32EMU_VERSION_MAJOR == 2 && MT32EMU_VERSION_MINOR >= 5),
@@ -61,22 +65,21 @@ private:
 	uint32_t GetMidiEventTimestamp() const;
 	service_t GetService();
 	void MixerCallBack(uint16_t len);
-	void SetMixerLevel(const AudioFrame &desired) noexcept;
 	uint16_t GetRemainingFrames();
 	void Render();
 
 	// Managed objects
 	mixer_channel_t channel = nullptr;
 
-	std::vector<int16_t> play_buffer = {};
-	static constexpr auto num_buffers = 4;
-	RWQueue<std::vector<int16_t>> playable{num_buffers};
-	RWQueue<std::vector<int16_t>> backstock{num_buffers};
+	std::vector<float> play_buffer = {};
+	static constexpr auto num_buffers = 20;
+	RWQueue<std::vector<float>> playable{num_buffers};
+	RWQueue<std::vector<float>> backstock{num_buffers};
 
 	std::mutex service_mutex = {};
 	service_t service = {};
 	std::thread renderer = {};
-	SoftLimiter soft_limiter;
+	std::optional<model_and_dir_t> model_and_dir = {};
 
 	// The following two members let us determine the total number of played
 	// frames, which is used by GetMidiEventTimestamp() to calculate a total

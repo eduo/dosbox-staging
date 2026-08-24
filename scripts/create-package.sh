@@ -4,7 +4,7 @@ set -e
 
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# Copyright (C) 2020-2021  Sherman Perry
+# Copyright (C) 2020-2022  Sherman Perry and the DOSBox Staging Team
 
 usage()
 {
@@ -12,15 +12,15 @@ usage()
     Usage: -p <platform> [-h -c <commit> -b <branch> -r <repo> -v <version> -f] BUILD_DIR PACKAGE_DIR
     Where:
         -h          : Show this help message
-        -p          : Buld platform. Can be one of linux, macos, msys2, msvc
+        -p          : Build platform. Can be one of linux, macos, msys2, msvc
         -c          : Git commit
         -b          : Git branch
         -r          : Git repository
-        -v          : dosbox-staging version
-        -f          : force creation if PACKAGE_DIR is not empty
+        -v          : DOSBox Staging version
+        -f          : Force creation if PACKAGE_DIR is not empty
         BUILD_DIR   : Meson build directory
         PACKAGE_DIR : Package directory
-    
+
     Note: On macos, '-v' must be set. On msvc, the environment variable VC_REDIST_DIR must be set."
 }
 
@@ -74,41 +74,46 @@ install_doc()
             ;;
     esac
     # Fill template variables in README.template
-    if [ -n "$git_commit" ]; then 
-        sed -i -e "s|%GIT_COMMIT%|$git_commit|" "$readme_tmpl"
+    if [[ "$git_branch" == "refs/tags/"* ]] && [[ "$git_branch" != *"-"* ]]; then
+        version_tag=`echo $git_branch | awk '{print substr($0,11);exit}'`
+        package_information="release $version_tag"
+    elif [ -n "$git_branch" ] && [ -n "$git_commit" ]; then
+        package_information="a development branch named $git_branch with commit $git_commit"
+    else
+        package_information="a development branch"
     fi
-    if [ -n "$git_branch" ]; then 
-        sed -i -e "s|%GIT_BRANCH%|$git_branch|" "$readme_tmpl"
+    if [ -n "$package_information" ]; then
+        sed -i -e "s|%PACKAGE_INFORMATION%|$package_information|" "$readme_tmpl"
     fi
     if [ -n "$git_repo" ]; then
         sed -i -e "s|%GITHUB_REPO%|$git_repo|"  "$readme_tmpl"
     fi
 }
 
-install_translation()
+install_resources()
 {
-    lng_dir=${pkg_dir}/translations
-    if [ "$platform" = "macos" ]; then
-        lng_dir=${macos_dst_dir}/Resources/translations
-    fi
-    # Prepare translation files
-    #
-    # Note:
-    #   We conciously drop the dialect postfix because no dialects are available.
-    #   (US was the default DOS dialect and therefore is the default for 'en').
-    #   Dialect translations will be added if/when they're available.
-    #
-    find contrib/translations -name '*.lng' |
+    case "$platform" in
+    "macos")
+        local src_dir=${build_dir}/../Resources
+        local dest_dir=${macos_dst_dir}/Resources
+        ;;
+    *)
+        local src_dir=${build_dir}/resources
+        local dest_dir=${pkg_dir}/resources
+        ;;
+    esac
+
+    find $src_dir -type f |
         while IFS= read -r src; do
-            target=$(basename "$src" | tr '[:upper:]' '[:lower:]')
-            install_file "$src" "$lng_dir/${target#??_}"
+            install_file "$src" "$dest_dir/${src#*$src_dir/}"
         done
 }
 
 pkg_linux()
 {
     # Print shared object dependencies
-    ldd "${build_dir}/dosbox"
+    # ldd crashes with a malloc error on the s390x platform, so always pass
+    ldd "${build_dir}/dosbox" || true
     install -DT "${build_dir}/dosbox" "${pkg_dir}/dosbox"
 
     install -DT contrib/linux/dosbox-staging.desktop "${pkg_dir}/desktop/dosbox-staging.desktop"
@@ -175,10 +180,17 @@ pkg_msvc()
 
 # Get GitHub CI environment variables if available. The CLI options
 # '-c', '-b', '-r' will override these if set.
-git_commit=$GITHUB_SHA
-git_branch=${GITHUB_REF#refs/heads/}
-git_repo=$GITHUB_REPOSITORY
+if [ -n "${GITHUB_REPOSITORY:-}" ]; then
+    git_commit=`echo ${GITHUB_SHA} | awk '{print substr($0,1,9);exit}'`
+    git_branch=${GITHUB_REF#refs/heads/}
+    git_repo=${GITHUB_REPOSITORY}
+else
+    git_commit=$(git rev-parse --short HEAD || echo '')
+    git_branch=$(git rev-parse --abbrev-ref HEAD || echo '')
+    git_repo=$(basename "$(git rev-parse --show-toplevel)" || echo '')
+fi
 
+print_usage="false"
 while getopts 'p:c:b:r:v:hf' c
 do
     case $c in
@@ -227,13 +239,13 @@ if [ -z "$pkg_dir" ]; then
     exit 1
 fi
 
-if [ "$platform" = "macos" ]; then 
+if [ "$platform" = "macos" ]; then
     if [ -z "$dbox_version" ]; then
-        echo "Dosbox version required on MacOS"
+        echo "DOSBox Staging version required on macOS"
         usage
         exit 1
     fi
-    macos_dst_dir=${pkg_dir}/dist/dosbox-staging.app/Contents
+    macos_dst_dir="${pkg_dir}/dist/DOSBox Staging.app/Contents"
 fi
 
 if [ "$platform" = "msvc" ] && [ -z "$VC_REDIST_DIR" ]; then
@@ -259,7 +271,7 @@ fi
 set -x
 
 install_doc
-install_translation
+install_resources
 
 case $platform in
     linux) pkg_linux ;;

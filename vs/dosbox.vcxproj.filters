@@ -43,9 +43,6 @@
     <ClCompile Include="..\src\debug\debug_gui.cpp">
       <Filter>src\debug</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\debug\debug_win32.cpp">
-      <Filter>src\debug</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\dos\cdrom.cpp">
       <Filter>src\dos</Filter>
     </ClCompile>
@@ -130,16 +127,16 @@
     <ClCompile Include="..\src\hardware\ide.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\hardware\adlib.cpp">
+    <ClCompile Include="..\src\hardware\adlib_gold.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\cmos.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\hardware\dc_silencer.cpp">
+    <ClCompile Include="..\src\hardware\covox.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\hardware\dbopl.cpp">
+    <ClCompile Include="..\src\hardware\compressor.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\disney.cpp">
@@ -181,19 +178,13 @@
     <ClCompile Include="..\src\hardware\keyboard.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\hardware\mame\fmopl.cpp">
-      <Filter>src\hardware\mame</Filter>
+    <ClCompile Include="..\src\hardware\lpt_dac.cpp">
+      <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\mame\saa1099.cpp">
       <Filter>src\hardware\mame</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\mame\sn76496.cpp">
-      <Filter>src\hardware\mame</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\hardware\mame\ymdeltat.cpp">
-      <Filter>src\hardware\mame</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\hardware\mame\ymf262.cpp">
       <Filter>src\hardware\mame</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\memory.cpp">
@@ -205,10 +196,19 @@
     <ClCompile Include="..\src\hardware\mpu401.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\hardware\opl.cpp">
+      <Filter>src\hardware</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\hardware\pci_bus.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\pcspeaker.cpp">
+      <Filter>src\hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\hardware\pcspeaker_discrete.cpp">
+      <Filter>src\hardware</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\hardware\pcspeaker_impulse.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\pic.cpp">
@@ -235,11 +235,17 @@
     <ClCompile Include="..\src\hardware\serialport\serialdummy.cpp">
       <Filter>src\hardware\serialport</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\hardware\serialport\serialmouse.cpp">
+      <Filter>src\hardware\serialport</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\hardware\serialport\serialport.cpp">
       <Filter>src\hardware\serialport</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\serialport\softmodem.cpp">
       <Filter>src\hardware\serialport</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\hardware\ston1_dac.cpp">
+      <Filter>src\hardware</Filter>
     </ClCompile>
     <ClCompile Include="..\src\hardware\tandy_sound.cpp">
       <Filter>src\hardware</Filter>
@@ -334,6 +340,18 @@
     <ClCompile Include="..\src\ints\mouse.cpp">
       <Filter>src\ints</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\ints\mouse_dos_driver.cpp">
+      <Filter>src\ints</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ints\mouse_ps2_bios.cpp">
+      <Filter>src\ints</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ints\mouse_serial.cpp">
+      <Filter>src\ints</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ints\mouse_vmware.cpp">
+      <Filter>src\ints</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\ints\xms.cpp">
       <Filter>src\ints</Filter>
     </ClCompile>
@@ -388,7 +406,7 @@
     <ClCompile Include="..\src\misc\setup.cpp">
       <Filter>src\misc</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\misc\soft_limiter.cpp">
+    <ClCompile Include="..\src\misc\string_utils.cpp">
       <Filter>src\misc</Filter>
     </ClCompile>
     <ClCompile Include="..\src\misc\support.cpp">
@@ -411,6 +429,9 @@
     </ClCompile>
     <ClCompile Include="..\src\midi\midi.cpp">
       <Filter>src\midi</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\dos\program_attrib.cpp">
+      <Filter>src\dos</Filter>
     </ClCompile>
     <ClCompile Include="..\src\dos\program_autotype.cpp">
       <Filter>src\dos</Filter>
@@ -436,7 +457,13 @@
     <ClCompile Include="..\src\dos\program_placeholder.cpp">
       <Filter>src\dos</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\misc\fs_utils.cpp">
+      <Filter>src\misc</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\misc\fs_utils_win32.cpp">
+      <Filter>src\misc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\misc\help_util.cpp">
       <Filter>src\misc</Filter>
     </ClCompile>
     <ClCompile Include="..\src\main.cpp">
@@ -461,6 +488,9 @@
       <Filter>src\libs\residfp</Filter>
     </ClCompile>
     <ClCompile Include="..\src\libs\residfp\Filter8580.cpp">
+      <Filter>src\libs\residfp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\residfp\FilterModelConfig.cpp">
       <Filter>src\libs\residfp</Filter>
     </ClCompile>
     <ClCompile Include="..\src\libs\residfp\FilterModelConfig6581.cpp">
@@ -492,6 +522,12 @@
     </ClCompile>
     <ClCompile Include="..\src\libs\residfp\WaveformGenerator.cpp">
       <Filter>src\libs\residfp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\tal-chorus\Lfo.cpp">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\YM7128B_emu\YM7128B_emu.c">
+      <Filter>src\libs\YM7128B_emu</Filter>
     </ClCompile>
     <ClCompile Include="..\src\misc\pacer.cpp">
       <Filter>src\misc</Filter>
@@ -535,18 +571,174 @@
     <ClCompile Include="..\src\libs\loguru\loguru.cpp">
       <Filter>src\libs\loguru</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\libs\sdlcd\SDL_cdrom.c">
+      <Filter>src\libs\sdlcd</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\sdlcd\win32\SDL_syscdrom.c">
+      <Filter>src\libs\sdlcd</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\libs\whereami\whereami.c">
       <Filter>src\libs\whereami</Filter>
     </ClCompile>
     <ClCompile Include="..\src\libs\ghc\fs_std_impl.cpp">
       <Filter>src\libs\ghc</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\misc\ansi_code_markup.cpp">
+      <Filter>src\misc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcclip.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcdisp.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcgetsc.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdckbd.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcscrn.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcsetsc.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\sdl2_queue\pdcutil.cpp">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\addch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\addchstr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\addstr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\attr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\beep.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\bkgd.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\border.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\clear.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\color.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\debug.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\delch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\deleteln.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\getch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\getstr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\getyx.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\inch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\inchstr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\initscr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\inopts.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\insch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\insstr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\instr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\kernel.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\keyname.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\mouse.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\move.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\outopts.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\overlay.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\pad.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\panel.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\printw.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\refresh.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\scanw.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\scr_dump.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\scroll.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\slk.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\termattr.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\touch.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\util.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\PDCurses\pdcurses\window.c">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\libs\zmbv\drvproc.cpp" />
+    <ClCompile Include="..\src\libs\zmbv\zmbv.cpp" />
+    <ClCompile Include="..\src\libs\zmbv\zmbv_vfw.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\bios.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\bios_disk.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\bitops.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\byteorder.h">
@@ -589,6 +781,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\hardware.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\help_util.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\inout.h">
@@ -649,9 +844,6 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\shell.h">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="..\include\soft_limiter.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="..\include\support.h">
@@ -792,22 +984,16 @@
     <ClInclude Include="..\src\hardware\font-switch.h">
       <Filter>src\hardware</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\hardware\mame\emu.h">
+    <ClInclude Include="..\src\hardware\gameblaster.h">
       <Filter>src\hardware\mame</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\hardware\mame\fmopl.h">
+    <ClInclude Include="..\src\hardware\mame\emu.h">
       <Filter>src\hardware\mame</Filter>
     </ClInclude>
     <ClInclude Include="..\src\hardware\mame\saa1099.h">
       <Filter>src\hardware\mame</Filter>
     </ClInclude>
     <ClInclude Include="..\src\hardware\mame\sn76496.h">
-      <Filter>src\hardware\mame</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\hardware\mame\ymdeltat.h">
-      <Filter>src\hardware\mame</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\hardware\mame\ymf262.h">
       <Filter>src\hardware\mame</Filter>
     </ClInclude>
     <ClInclude Include="..\src\hardware\serialport\directserial.h">
@@ -828,7 +1014,13 @@
     <ClInclude Include="..\src\hardware\serialport\softmodem.h">
       <Filter>src\hardware\serialport</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\hardware\serialport\serialmouse.h">
+      <Filter>src\hardware\serialport</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\ints\int10.h">
+      <Filter>src\ints</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ints\mouse_core.h">
       <Filter>src\ints</Filter>
     </ClInclude>
     <ClInclude Include="..\src\ints\xms.h">
@@ -909,12 +1101,6 @@
     <ClInclude Include="..\src\gui\gui_msgs.h">
       <Filter>src\gui</Filter>
     </ClInclude>
-    <ClInclude Include="..\src\gui\render_crt_glsl.h">
-      <Filter>src\gui</Filter>
-    </ClInclude>
-    <ClInclude Include="..\src\gui\render_glsl.h">
-      <Filter>src\gui</Filter>
-    </ClInclude>
     <ClInclude Include="..\src\libs\residfp\array.h">
       <Filter>src\libs\residfp</Filter>
     </ClInclude>
@@ -934,6 +1120,9 @@
       <Filter>src\libs\residfp</Filter>
     </ClInclude>
     <ClInclude Include="..\src\libs\residfp\Filter8580.h">
+      <Filter>src\libs\residfp</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\residfp\FilterModelConfig.h">
       <Filter>src\libs\residfp</Filter>
     </ClInclude>
     <ClInclude Include="..\src\libs\residfp\FilterModelConfig6581.h">
@@ -972,6 +1161,30 @@
     <ClInclude Include="..\src\libs\residfp\WaveformGenerator.h">
       <Filter>src\libs\residfp</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\Chorus.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\ChorusEngine.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\DCBlock.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\Lfo.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\OnePoleLP.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\OscNoise.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\tal-chorus\Params.h">
+      <Filter>src\libs\tal-chorus</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\YM7128B_emu\YM7128B_emu.h">
+      <Filter>src\libs\YM7128B_emu</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\cpu\core_dyn_x86\risc_x64.h">
       <Filter>src\cpu\core_dyn_x86</Filter>
     </ClInclude>
@@ -984,6 +1197,17 @@
     <ClInclude Include="..\src\libs\whereami\whereami.h">
       <Filter>src\libs\whereami</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\ansi_code_markup.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\PDCurses\sdl2_queue\pdcsdl.h">
+      <Filter>src\libs\pdcurses</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\mverb\MVerb.h">
+      <Filter>src\libs\mverb</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\libs\zmbv\Resource.h" />
+    <ClInclude Include="..\src\libs\zmbv\zmbv.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\src\winres.rc">
@@ -1053,6 +1277,9 @@
     <Filter Include="src\libs\gui_tk">
       <UniqueIdentifier>{c1d4aca1-2ddd-4dc2-ba93-8b2279ef4d30}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\libs\mverb">
+      <UniqueIdentifier>{8804de8e-c30a-4d93-b2b4-1c1634fd97b7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\libs\nuked">
       <UniqueIdentifier>{69d13cb3-0db7-4e3c-92a0-c2b1a79b5b63}</UniqueIdentifier>
     </Filter>
@@ -1077,6 +1304,12 @@
     <Filter Include="src\libs\residfp">
       <UniqueIdentifier>{e8ef008d-ceb9-4224-9b9e-b5b62933ca0d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="src\libs\tal-chorus">
+      <UniqueIdentifier>{033fc91c-5316-48fd-a3f8-0d7a1b0839ae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\libs\YM7128B_emu">
+      <UniqueIdentifier>{033fc9cc-5916-480d-a3f8-839ae0d7a1b0}</UniqueIdentifier>
+    </Filter>
     <Filter Include="src\libs\loguru">
       <UniqueIdentifier>{61f19037-c60b-46ea-8d28-53fbf18dc6db}</UniqueIdentifier>
     </Filter>
@@ -1085,6 +1318,12 @@
     </Filter>
     <Filter Include="src\libs\ghc">
       <UniqueIdentifier>{9df2bcc2-35e3-4be4-a577-dff8be565c65}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\libs\sdlcd">
+      <UniqueIdentifier>{5aedba43-0ef7-4531-a907-6609a23675d8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\libs\pdcurses">
+      <UniqueIdentifier>{40435b8c-40e5-4751-ad49-5c4492538be5}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

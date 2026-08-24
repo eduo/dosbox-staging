@@ -1,4 +1,7 @@
 /*
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ *  Copyright (C) 2021-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -19,6 +22,7 @@
 #include "cross.h"
 
 #include <cerrno>
+#include <clocale>
 #include <string>
 #include <vector>
 
@@ -27,22 +31,29 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#ifdef WIN32
-#ifndef _WIN32_IE
-#define _WIN32_IE 0x0400
+#if C_COREFOUNDATION
+#	include <CoreFoundation/CoreFoundation.h>
 #endif
-#include <shlobj.h>
+
+#ifdef WIN32
+#	include <winnls.h>
+
+#	ifndef _WIN32_IE
+#		define _WIN32_IE 0x0400
+#	endif
+#	include <shlobj.h>
 #else
-#include <libgen.h>
+#	include <libgen.h>
 #endif
 
 #if defined HAVE_PWD_H
-#include <pwd.h>
+#	include <pwd.h>
 #endif
 
 #include "fs_utils.h"
 #include "string_utils.h"
 #include "support.h"
+#include "drives.h"
 
 static std::string GetConfigName()
 {
@@ -437,6 +448,285 @@ FILE *fopen_wrap_ro_fallback(const std::string &filename, bool &is_readonly)
 	}
 	// Note: if failed, the caller should provide a context-specific message
 	return fp;
+}
+
+bool wild_match(const char *haystack, const char *needle)
+{
+	assert(haystack);
+	assert(needle);
+	char *p = (char *)needle;
+	while(*p != '\0') {
+		switch (*p) {
+		case '?':
+			if (*haystack == '\0')
+				return false;
+			++haystack;
+			break;
+		case '*':
+		{
+			if (p[1] == '\0')
+				return true;
+			const auto max = strlen(haystack);
+			for (size_t i = 0; i < max; i++)
+				if (wild_match(haystack + i, p + 1))
+					return true;
+			return false;
+		}
+		default:
+			if (toupper(*haystack) != *p)
+				return false;
+			++haystack;
+		}
+		++p;
+	}
+	return *haystack == '\0';
+}
+
+bool WildFileCmp(const char *file, const char *wild, bool long_compare)
+{
+	if (!file || !wild || (*file && !*wild) || strlen(wild) > LFN_NAMELENGTH)
+		return false;
+	char file_name[LFN_NAMELENGTH + 1];
+	char file_ext[LFN_NAMELENGTH + 1];
+	char wild_name[LFN_NAMELENGTH + 1];
+	char wild_ext[LFN_NAMELENGTH + 1];
+	Bitu r;
+
+	if (long_compare) {
+		for (r = 0; r <= LFN_NAMELENGTH; r++)
+			file_name[r] = wild_name[r] = file_ext[r] = wild_ext[r] = 0;
+	} else {
+		strcpy(file_name, "        ");
+		strcpy(file_ext, "   ");
+		strcpy(wild_name, "        ");
+		strcpy(wild_ext, "   ");
+	}
+
+	Bitu size = 0;
+	size_t elength = 0;
+	const char *find_ext;
+	find_ext = strrchr(file, '.');
+	if (find_ext) {
+		size = (std::min)((unsigned int)(long_compare ? LFN_NAMELENGTH
+		                                              : DOS_MFNLENGTH),
+		                  (unsigned int)(find_ext - file));
+		memcpy(file_name, file, size);
+		find_ext++;
+		elength = strlen(find_ext);
+		memcpy(file_ext, find_ext,
+		       strnlen(find_ext,
+		               long_compare ? LFN_NAMELENGTH : DOS_EXTLENGTH));
+	} else {
+		size = strlen(file);
+		elength = 0;
+		memcpy(file_name, file,
+		       strnlen(file, long_compare ? LFN_NAMELENGTH : DOS_MFNLENGTH));
+	}
+	upcase(file_name);
+	upcase(file_ext);
+	char nwild[LFN_NAMELENGTH + 2];
+	strcpy(nwild, wild);
+	if (long_compare && strrchr(nwild, '*') && strrchr(nwild, '.') == NULL)
+		strcat(nwild, ".*");
+	find_ext = strrchr(nwild, '.');
+	if (find_ext) {
+		if (long_compare && wild_match(file, nwild))
+			return true;
+		Bitu size = (std::min)((unsigned int)(long_compare
+		                                              ? LFN_NAMELENGTH
+		                                              : (DOS_MFNLENGTH + 1)),
+		                       (unsigned int)(find_ext - nwild));
+		memcpy(wild_name, nwild, size);
+		find_ext++;
+		memcpy(wild_ext, find_ext,
+		       strnlen(find_ext,
+		               (long_compare ? LFN_NAMELENGTH : DOS_EXTLENGTH) + 1));
+	} else {
+		memcpy(wild_name, wild,
+		       strnlen(wild,
+		               (long_compare ? LFN_NAMELENGTH : DOS_MFNLENGTH) + 1));
+	}
+	upcase(wild_name);
+	upcase(wild_ext);
+	/* Names are right do some checking */
+	if (long_compare && strchr(wild_name, '*')) {
+		if (!strchr(wild, '.'))
+			return wild_match(file, wild_name);
+		else if (!wild_match(file_name, wild_name))
+			return false;
+	} else {
+		r = 0;
+		while (r < (long_compare ? size : DOS_MFNLENGTH)) {
+			if (wild_name[r] == '*')
+				break;
+			if (wild_name[r] != '?' && wild_name[r] != file_name[r])
+				return false;
+			r++;
+		}
+		if (wild_name[r] && wild_name[r] != '*')
+			return false;
+	}
+	if (long_compare && strchr(wild_ext, '*'))
+		return wild_match(file_ext, wild_ext);
+	else {
+		r = 0;
+		while (r < (long_compare ? elength : DOS_EXTLENGTH)) {
+			if (wild_ext[r] == '*')
+				return true;
+			if (wild_ext[r] != '?' && wild_ext[r] != file_ext[r])
+				return false;
+			r++;
+		}
+		if (wild_ext[r] && wild_ext[r] != '*')
+			return false;
+		return true;
+	}
+}
+
+bool get_expanded_files(const std::string &path,
+                        std::vector<std::string> &paths,
+                        bool files_only,
+                        bool skip_native_path) noexcept
+{
+	if (!skip_native_path) {
+		const auto real_path = to_native_path(path);
+		if (real_path.length()) {
+			paths.push_back(real_path);
+			return true;
+		}
+	}
+
+	std::vector<std::string> files;
+	const std_fs::path p = path;
+	auto dir = p.parent_path();
+	const auto dir_str = dir.string();
+	const auto native_dir = to_native_path(dir_str);
+	if (dir_str.size() && native_dir.empty())
+		return false;
+
+	dir = native_dir.empty() ? "." : native_dir;
+	for (const auto &entry : std_fs::directory_iterator(dir)) {
+		const auto result = entry.path().filename();
+		const auto long_compare = true;
+		if ((!files_only || !entry.is_directory()) &&
+		    WildFileCmp(result.string().c_str(),
+		                p.filename().string().c_str(), long_compare))
+			files.push_back((dir / result).string());
+	}
+
+	if (files.size()) {
+		sort(files.begin(), files.end());
+		paths.insert(paths.end(), files.begin(), files.end());
+		return true;
+	} else {
+		return false;
+	}
+}
+
+#if C_COREFOUNDATION
+std::string cfstr_to_string(CFStringRef source)
+{
+	if (!source)
+		return {};
+
+	// Try to get the internal char-compatible buffer
+	constexpr auto encoding = kCFStringEncodingUTF8;
+	const auto buf = CFStringGetCStringPtr(source, encoding);
+	if (buf)
+		return buf;
+
+	// If the char-compatible buffer doesn't exist; it's probably wide-encoded
+	const auto source_len = CFStringGetLength(source);
+
+	// How much space is needed to decode to ASCII?
+	const auto target_len = CFStringGetMaximumSizeForEncoding(source_len,
+	                                                          encoding);
+
+	// Prepare our target string, including trailing terminator
+	std::string target(target_len, '\0');
+
+	// Decode from the source into the target
+	const auto extracted = CFStringGetCString(source,
+	                                          target.data(),
+	                                          target.length(),
+	                                          encoding);
+
+	if (!extracted)
+		target.clear();
+
+	return target;
+}
+#endif
+
+[[maybe_unused]] std::string get_language_from_os()
+{
+	// Lamda helper to extract the language from macOS locale
+#if C_COREFOUNDATION
+	auto get_lang_from_macos = []() {
+		const auto lc_array = CFLocaleCopyPreferredLanguages();
+		const auto locale_ref = CFArrayGetValueAtIndex(lc_array, 0);
+		const auto lc_cfstr = reinterpret_cast<CFStringRef>(locale_ref);
+		auto lang = cfstr_to_string(lc_cfstr);
+		clear_language_if_default(lang);
+		return lang;
+	};
+#endif
+
+// Lamda helper to extract the language from Windows locale
+#if defined(WIN32)
+	auto get_lang_from_windows = []() -> std::string {
+		std::string lang = {};
+		wchar_t w_buf[LOCALE_NAME_MAX_LENGTH];
+		if (!GetUserDefaultLocaleName(w_buf, LOCALE_NAME_MAX_LENGTH))
+			return lang;
+
+		// Convert the wide-character string into a normal buffer
+		char buf[LOCALE_NAME_MAX_LENGTH];
+		wcstombs(buf, w_buf, LOCALE_NAME_MAX_LENGTH);
+
+		lang = buf;
+		clear_language_if_default(lang);
+		return lang;
+	};
+#endif
+
+	// Lamda helper to extract the language from POSIX systems
+	auto get_lang_from_posix = []() {
+		std::string lang   = {};
+		const auto envlang = setlocale(LC_ALL, "");
+		if (envlang) {
+			lang = envlang;
+			clear_language_if_default(lang);
+		}
+		return lang;
+	};
+
+	std::string lang = {};
+
+#if C_COREFOUNDATION
+	lang = get_lang_from_macos();
+	if (!lang.empty()) {
+		DEBUG_LOG_MSG("LANG: Got language '%s' from macOS locale", lang.c_str());
+		return lang;
+	}
+#endif
+
+#if defined(WIN32)
+	lang = get_lang_from_windows();
+	if (!lang.empty()) {
+		DEBUG_LOG_MSG("LANG: Got language '%s' from Windows locale", lang.c_str());
+		return lang;
+	}
+#endif
+
+	lang = get_lang_from_posix();
+	if (!lang.empty()) {
+		DEBUG_LOG_MSG("LANG: Got language '%s' from POSIX locale", lang.c_str());
+		return lang;
+	}
+
+	assert(lang.empty());
+	return lang;
 }
 
 namespace cross {

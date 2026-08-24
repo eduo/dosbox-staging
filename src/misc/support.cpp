@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -30,16 +30,22 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <functional>
+#include <fstream>
+#include <iterator>
+#include <map>
+#include <random>
 #include <stdexcept>
 #include <string>
 
 #include "cross.h"
 #include "debug.h"
 #include "fs_utils.h"
+#include "string_utils.h"
 #include "video.h"
 
-#include "../libs/whereami/whereami.h"
+#include "whereami.h"
 
 char int_to_char(int val)
 {
@@ -84,16 +90,6 @@ std::string get_basename(const std::string &filename)
 }
 
 
-void upcase(std::string &str) {
-	int (*tf)(int) = std::toupper;
-	std::transform(str.begin(), str.end(), str.begin(), tf);
-}
-
-void lowcase(std::string &str) {
-	int (*tf)(int) = std::tolower;
-	std::transform(str.begin(), str.end(), str.begin(), tf);
-}
-
 bool is_executable_filename(const std::string &filename) noexcept
 {
 	const size_t n = filename.length();
@@ -104,140 +100,6 @@ bool is_executable_filename(const std::string &filename) noexcept
 	std::string sfx = filename.substr(n - 3);
 	lowcase(sfx);
 	return (sfx == "exe" || sfx == "bat" || sfx == "com");
-}
-
-std::string replace(const std::string &str, char old_char, char new_char) noexcept
-{
-	std::string new_str = str;
-	for (char &c : new_str)
-		if (c == old_char)
-			c = new_char;
-	return str;
-}
-
-void trim(std::string &str)
-{
-	constexpr char whitespace[] = " \r\t\f\n";
-	const auto empty_pfx = str.find_first_not_of(whitespace);
-	if (empty_pfx == std::string::npos) {
-		str.clear(); // whole string is filled with whitespace
-		return;
-	}
-	const auto empty_sfx = str.find_last_not_of(whitespace);
-	str.erase(empty_sfx + 1);
-	str.erase(0, empty_pfx);
-}
-
-std::vector<std::string> split(const std::string &seq, const char delim)
-{
-	std::vector<std::string> words;
-	if (seq.empty())
-		return words;
-
-	// count delimeters to reserve space in our vector of words
-	const size_t n = 1u + std::count(seq.begin(), seq.end(), delim);
-	words.reserve(n);
-
-	std::string::size_type head = 0;
-	while (head != std::string::npos) {
-		const auto tail = seq.find_first_of(delim, head);
-		const auto word_len = tail - head;
-		words.emplace_back(seq.substr(head, word_len));
-		if (tail == std::string::npos) {
-			break;
-		}
-		head += word_len + 1;
-	}
-
-	// did we reserve the exact space needed?
-	assert(n == words.size());
-
-	return words;
-}
-
-std::vector<std::string> split(const std::string &seq)
-{
-	std::vector<std::string> words;
-	if (seq.empty())
-		return words;
-
-	constexpr auto whitespace = " \f\n\r\t\v";
-
-	// count words to reserve space in our vector
-	size_t n = 0;
-	auto head = seq.find_first_not_of(whitespace, 0);
-	while (head != std::string::npos) {
-		const auto tail = seq.find_first_of(whitespace, head);
-		head = seq.find_first_not_of(whitespace, tail);
-		++n;
-	}
-	words.reserve(n);
-
-	// populate the vector with the words
-	head = seq.find_first_not_of(whitespace, 0);
-	while (head != std::string::npos) {
-		const auto tail = seq.find_first_of(whitespace, head);
-		words.emplace_back(seq.substr(head, tail - head));
-		head = seq.find_first_not_of(whitespace, tail);
-	}
-
-	// did we reserve the exact space needed?
-	assert(n == words.size());
-
-	return words;
-}
-
-void strip_punctuation(std::string &str) {
-	str.erase(
-		std::remove_if(
-			str.begin(),
-			str.end(),
-			[](unsigned char c){ return std::ispunct(c); }),
-		str.end());
-}
-
-/*
-	Ripped some source from freedos for this one.
-
-*/
-
-
-/*
- * replaces all instances of character o with character c
- */
-
-
-void strreplace(char * str,char o,char n) {
-	while (*str) {
-		if (*str==o) *str=n;
-		str++;
-	}
-}
-char *ltrim(char *str) {
-	while (*str && isspace(*reinterpret_cast<unsigned char*>(str))) str++;
-	return str;
-}
-
-char *rtrim(char *str) {
-	char *p;
-	p = strchr(str, '\0');
-	while (--p >= str && isspace(*reinterpret_cast<unsigned char*>(p))) {};
-	p[1] = '\0';
-	return str;
-}
-
-char *trim(char *str) {
-	return ltrim(rtrim(str));
-}
-
-char * upcase(char * str) {
-    for (char* idx = str; *idx ; idx++) *idx = toupper(*reinterpret_cast<unsigned char*>(idx));
-    return str;
-}
-
-char * lowcase(char * str) {
-	for(char* idx = str; *idx ; idx++)  *idx = tolower(*reinterpret_cast<unsigned char*>(idx));
-	return str;
 }
 
 // Scans the provided command-line string for a '/'flag, removes it (if found),
@@ -273,39 +135,6 @@ char * ScanCMDRemain(char * cmd) {
 		*scan=0;
 		return found;
 	} else return 0;
-}
-
-char * StripWord(char *&line) {
-	char * scan=line;
-	scan=ltrim(scan);
-	if (*scan=='"') {
-		char * end_quote=strchr(scan+1,'"');
-		if (end_quote) {
-			*end_quote=0;
-			line=ltrim(++end_quote);
-			return (scan+1);
-		}
-	}
-	char * begin=scan;
-	for (char c = *scan ;(c = *scan);scan++) {
-		if (isspace(*reinterpret_cast<unsigned char*>(&c))) {
-			*scan++=0;
-			break;
-		}
-	}
-	line=scan;
-	return begin;
-}
-
-Bits ConvHexWord(char * word) {
-	Bitu ret=0;
-	while (char c=toupper(*reinterpret_cast<unsigned char*>(word))) {
-		ret*=16;
-		if (c>='0' && c<='9') ret+=c-'0';
-		else if (c>='A' && c<='F') ret+=10+(c-'A');
-		word++;
-	}
-	return ret;
 }
 
 /*
@@ -356,12 +185,6 @@ void set_thread_name([[maybe_unused]] std::thread& thread, [[maybe_unused]] cons
 #endif
 }
 
-bool ends_with(const std::string &str, const std::string &suffix) noexcept
-{
-	return (str.size() >= suffix.size() &&
-	        str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0);
-}
-
 // Search for the needle in the haystack, case insensitive.
 bool find_in_case_insensitive(const std::string &needle, const std::string &haystack)
 {
@@ -400,3 +223,229 @@ const std_fs::path &GetExecutablePath()
 	}
 	return exe_path;
 }
+
+static const std::deque<std_fs::path> &GetResourceParentPaths()
+{
+	static std::deque<std_fs::path> paths = {};
+	if (paths.size())
+		return paths;
+
+	// Prioritize portable configuration: allow the entire resource tree or
+	// just a single resource to be included in the current working directory.
+	paths.emplace_back(std_fs::path("."));
+	paths.emplace_back(std_fs::path("resources"));
+#if defined(MACOSX)
+	paths.emplace_back(GetExecutablePath() / "../Resources");
+	paths.emplace_back(GetExecutablePath() / "../../Resources");
+#else
+	paths.emplace_back(GetExecutablePath() / "resources");
+	paths.emplace_back(GetExecutablePath() / "../resources");
+#endif
+	// macOS, POSIX, and even MinGW/MSYS2/Cygwin:
+	paths.emplace_back(std_fs::path("/usr/local/share/dosbox-staging"));
+	paths.emplace_back(std_fs::path("/usr/share/dosbox-staging"));
+	paths.emplace_back(std_fs::path(CROSS_GetPlatformConfigDir()));
+	return paths;
+}
+
+// Select either an integer or real-based uniform distribution
+template <typename T>
+	using uniform_distributor_t =
+	    typename std::conditional <std::is_integral<T>::value,
+	                    std::uniform_int_distribution<T>,
+	                    std::uniform_real_distribution<T>>::type;
+
+template <typename T>
+std::function<T()> CreateRandomizer(const T min_value, const T max_value)
+{
+	static std::random_device rd;        // one-time call to the host OS
+	static std::mt19937 generator(rd()); // seed the mersenne_twister once
+
+	return [=]() {
+		auto distribute = uniform_distributor_t<T>(min_value, max_value);
+		return distribute(generator);
+	};
+}
+// Explicit template instantiations
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+template std::function<int16_t()> CreateRandomizer<int16_t>(const int16_t, const int16_t);
+template std::function<float()> CreateRandomizer<float>(const float, const float);
+
+std_fs::path GetResourcePath(const std_fs::path &name)
+{
+	// return the first existing resource
+	std::error_code ec;
+	for (const auto &parent : GetResourceParentPaths()) {
+		const auto resource = parent / name;
+		if (std_fs::exists(resource, ec)) {
+			return resource;
+		}
+	}
+	return std_fs::path();
+}
+
+std_fs::path GetResourcePath(const std_fs::path &subdir, const std_fs::path &name)
+{
+	return GetResourcePath(subdir / name);
+}
+
+static std::vector<std_fs::path> GetFilesInPath(const std_fs::path &dir,
+                                                const std::string_view files_ext)
+{
+	std::vector<std_fs::path> files;
+
+	// Check if the directory exists
+	if (!std_fs::is_directory(dir))
+		return files;
+
+	// Ensure the extension is valid
+	assert(files_ext.length() && files_ext[0] == '.');
+
+	for (const auto &entry : std_fs::recursive_directory_iterator(dir))
+		if (entry.is_regular_file() && entry.path().extension() == files_ext)
+			files.emplace_back(entry.path().lexically_relative(dir));
+
+	std::sort(files.begin(), files.end());
+	return files;
+}
+
+std::map<std_fs::path, std::vector<std_fs::path>> GetFilesInResource(
+        const std_fs::path &res_name, const std::string_view files_ext)
+{
+	std::map<std_fs::path, std::vector<std_fs::path>> paths_and_files;
+	for (const auto &parent : GetResourceParentPaths()) {
+		auto res_path = parent / res_name;
+		auto res_files = GetFilesInPath(res_path, files_ext);
+		paths_and_files.emplace(std::move(res_path), std::move(res_files));
+	}
+	return paths_and_files;
+}
+
+std::vector<uint8_t> LoadResource(const std_fs::path &name,
+                                  const ResourceImportance importance)
+{
+	const auto resource_path = GetResourcePath(name);
+	std::ifstream file(resource_path, std::ios::binary);
+
+	if (!file.is_open()) {
+		if (importance == ResourceImportance::Optional) {
+			return {};
+		}
+		assert(importance == ResourceImportance::Mandatory);
+		LOG_ERR("RESOURCE: Could not open mandatory resource '%s', tried:", name.string().c_str());
+		for (const auto &path : GetResourceParentPaths()) {
+			LOG_WARNING("RESOURCE:  - '%s'", (path / name).string().c_str());
+		}
+		E_Exit("RESOURCE: Mandatory resource failure (see detailed message)");
+	}
+
+	const std::vector<uint8_t> buffer(std::istreambuf_iterator<char>{file}, {});
+	// DEBUG_LOG_MSG("RESOURCE: Loaded resource '%s' [%d bytes]",
+	//               resource_path.string().c_str(),
+	//               check_cast<int>(buffer.size()));
+	return buffer;
+}
+
+std::vector<uint8_t> LoadResource(const std_fs::path &subdir,
+                                  const std_fs::path &name,
+                                  const ResourceImportance importance)
+{
+	return LoadResource(subdir / name, importance);
+}
+
+bool path_exists(const std_fs::path &path)
+{
+	std::error_code ec; // avoid exceptions
+	return std_fs::exists(path, ec);
+}
+
+bool is_writable(const std_fs::path &p)
+{
+	using namespace std_fs;
+	std::error_code ec; // avoid exceptions
+	const auto perms = status(p, ec).permissions();
+	return ((perms & perms::owner_write) != perms::none ||
+	        (perms & perms::group_write) != perms::none ||
+	        (perms & perms::others_write) != perms::none);
+}
+
+bool is_readable(const std_fs::path &p)
+{
+	using namespace std_fs;
+	std::error_code ec; // avoid exceptions
+	const auto perms = status(p, ec).permissions();
+	return ((perms & perms::owner_read) != perms::none ||
+	        (perms & perms::group_read) != perms::none ||
+	        (perms & perms::others_read) != perms::none);
+}
+
+bool is_readonly(const std_fs::path &p)
+{
+	return is_readable(p) && !is_writable(p);
+}
+
+bool make_writable(const std_fs::path &p)
+{
+	// Check
+	if (is_writable(p))
+		return true;
+
+	// Apply
+	std::error_code ec;
+	using namespace std_fs;
+	permissions(p, perms::owner_write, perm_options::add, ec);
+
+	// Result and verification
+	if (ec)
+		LOG_WARNING("FILESYSTEM: Failed to add write permissions for '%s': %s",
+		            p.string().c_str(), ec.message().c_str());
+	else
+		assert(is_writable(p));
+
+	return (!ec);
+}
+
+bool make_readonly(const std_fs::path &p)
+{
+	// Check
+	if (is_readonly(p))
+		return true;
+
+	// Apply
+	using namespace std_fs;
+	constexpr auto write_perms = (perms::owner_write |
+	                              perms::group_write |
+	                              perms::others_write);
+	std::error_code ec;
+	permissions(p, write_perms, perm_options::remove, ec);
+
+	// Result and verification
+	if (ec)
+		LOG_WARNING("FILESYSTEM: Failed to remove write permissions for '%s': %s",
+		            p.string().c_str(), ec.message().c_str());
+	else
+		assert(is_readonly(p));
+
+	return (!ec);
+}
+
+bool is_date_valid(const uint32_t year, const uint32_t month, const uint32_t day)
+{
+	if (year < 1980 || month > 12 || month == 0 || day == 0)
+		return false;
+	// February has 29 days on leap-years and 28 days otherwise.
+	const bool is_leap_year = !(year % 4) && (!(year % 400) || (year % 100));
+	if (month == 2 && day > (uint32_t)(is_leap_year ? 29 : DOS_DATE_months[month]))
+		return false;
+	if (month != 2 && day > DOS_DATE_months[month])
+		return false;
+	return true;
+}
+
+bool is_time_valid(const uint32_t hour, const uint32_t minute, const uint32_t second)
+{
+	if (hour > 23 || minute > 59 || second > 59)
+		return false;
+	return true;
+}
+

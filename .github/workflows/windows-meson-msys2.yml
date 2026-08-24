@@ -2,7 +2,7 @@ name: MSYS2 builds
 
 on: [push, pull_request]
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
@@ -10,7 +10,6 @@ env:
   CCACHE_DIR:      "/c/ccache"
   CCACHE_MAXSIZE:  "64M"
   CCACHE_COMPRESS: "true"
-  BUILD_FLAGS: "-Dbuildtype=release -Db_asneeded=true --force-fallback-for=fluidsynth,mt32emu,slirp -Dtry_static_libs=fluidsynth,mt32emu,opusfile,png,slirp"
   BUILD_RELEASE_DIR: build/release
   BUILD_DEBUGGER_DIR: build/debugger
 
@@ -18,7 +17,7 @@ jobs:
   build_msys2:
     name: ${{ matrix.conf.name }}
     runs-on: windows-latest
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier,shermp', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
 
     strategy:
       matrix:
@@ -27,39 +26,50 @@ jobs:
             toolchain: ""
             arch: i686
             sys: MINGW32
-            max_warnings: 1
+            cc: gcc
+            max_warnings: 0
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled
           - name: GCC (MinGW) x86_64
             toolchain: ""
             arch: x86_64
             sys: MINGW64
-            max_warnings: 1
-          # - name: Clang x86
-          #   toolchain: clang-
-          #   arch: i686
-          #   sys: CLANG32
-          #   max_warnings: 19
+            cc: gcc
+            max_warnings: 0
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled
+          - name: GCC (UCRT) x86_64
+            toolchain: ucrt-
+            arch: x86_64
+            sys: UCRT64
+            cc: gcc
+            max_warnings: 0
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled
           - name: Clang x86_64
             toolchain: clang-
             arch: x86_64
             sys: CLANG64
-            max_warnings: 5
+            cc: clang
+            max_warnings: 0
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled
           - name: GCC +tests
             toolchain: ""
             arch: x86_64
             sys: MINGW64
             run_tests: true
-            max_warnings: -0
+            cc: gcc
+            max_warnings: 0
+            build_flags: -Dbuildtype=debug
           - name: GCC +debugger
             toolchain: ""
             arch: x86_64
             sys: MINGW64
-            max_warnings: 3
+            cc: gcc
+            max_warnings: 0
             build_flags: -Denable_debugger=normal
-    
+
     defaults:
       run:
         shell: msys2 {0}
-    
+
     steps:
       - name: Disable git line ending conversion
         shell: powershell
@@ -68,32 +78,31 @@ jobs:
           git config --global core.eol lf
 
       - name: Checkout repository
-        uses: actions/checkout@v2
-      
-      - name: Setup MSYS2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      - name: Setup MSYS2 and install packages
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{matrix.conf.sys}}
           update: true
           install: >-
-            git
+            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-${{matrix.conf.cc}}
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-meson
-            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-gcc
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-ccache
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-pkgconf
-            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-python
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-ntldd
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-ncurses
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-glib2
-            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-fluidsynth
-            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-munt-mt32emu
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-libpng
-            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-libslirp
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-opusfile
+            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-libslirp
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-SDL2
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-SDL2_net
             mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-zlib
-      
+            mingw-w64-${{matrix.conf.toolchain}}${{matrix.conf.arch}}-speexdsp
+
       - name:  Prepare compiler cache
         id:    prep-ccache
         run: |
@@ -107,15 +116,15 @@ jobs:
         id:    cache-ccache
         with:
           path: ${{ steps.prep-ccache.outputs.dir }}
-          key:  ccache-msys2-${{ matrix.conf.sys }}-${{ steps.prep-ccache.outputs.name_hash }}-${{ steps.prep-ccache.outputs.today }}-2
+          key:  ccache-msys2-${{ matrix.conf.sys }}-${{ steps.prep-ccache.outputs.name_hash }}-${{ steps.prep-ccache.outputs.today }}-3
           restore-keys: |
-            ccache-msys2-${{ matrix.conf.sys }}-${{ steps.prep-ccache.outputs.name_hash }}-${{ steps.prep-ccache.outputs.yesterday }}-2
+            ccache-msys2-${{ matrix.conf.sys }}-${{ steps.prep-ccache.outputs.name_hash }}-${{ steps.prep-ccache.outputs.yesterday }}-3
 
       - name:  Cache subprojects
         uses:  actions/cache@v2
         with:
           path: subprojects/packagecache
-          key:  subprojects-${{ hashFiles('subprojects/*.wrap') }}
+          key:  subprojects-${{ hashFiles('subprojects/*.wrap') }}-3
 
       - name: Log environment
         run:  ./scripts/log-env.sh
@@ -123,13 +132,16 @@ jobs:
       - name: Setup build
         run: |
           meson setup ${{ matrix.conf.build_flags }} build
-      
+
       - name: Build
         run: |
           set -xo pipefail
-          ninja -C build |& tee build.log
+          scripts/retry_command.sh 10 meson compile -C build |& tee build.log
           ccache -s
-      
+          #
+          # Reason for retry is due to intermittent Python symbol extractor failure
+          # under MSYS2 reported in bug: https://github.com/msys2/MINGW-packages/issues/11864
+
       - name: Run tests
         if:   matrix.conf.run_tests
         run:  meson test -C build --print-errorlogs
@@ -143,22 +155,19 @@ jobs:
   build_msys2_release:
     name: ${{ matrix.conf.name }} Release
     runs-on: windows-latest
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier,shermp', github.actor) == false
-    
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+
     strategy:
       matrix:
         conf:
-          - name: GCC (MinGW) x86
-            arch: i686
-            sys: MINGW32
-          - name: GCC (MinGW) x86_64
+          - name: Clang x86_64
             arch: x86_64
-            sys: MINGW64
-    
+            sys: CLANG64
+
     defaults:
       run:
         shell: msys2 {0}
-   
+
     steps:
       - name: Disable git line ending conversion
         shell: powershell
@@ -166,34 +175,33 @@ jobs:
           git config --global core.autocrlf false
           git config --global core.eol lf
 
-      - name: Checkout repository and submodules
-        uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
-          submodules: recursive
+          submodules: false
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
           msystem: ${{matrix.conf.sys}}
           update: true
-          install: >-
+          install: |
             git
-            mingw-w64-${{matrix.conf.arch}}-meson
-            mingw-w64-${{matrix.conf.arch}}-gcc
-            mingw-w64-${{matrix.conf.arch}}-ccache
-            mingw-w64-${{matrix.conf.arch}}-pkgconf
-            mingw-w64-${{matrix.conf.arch}}-ntldd
-            mingw-w64-${{matrix.conf.arch}}-ncurses
-            mingw-w64-${{matrix.conf.arch}}-glib2
-            mingw-w64-${{matrix.conf.arch}}-fluidsynth
-            mingw-w64-${{matrix.conf.arch}}-munt-mt32emu
-            mingw-w64-${{matrix.conf.arch}}-libpng
-            mingw-w64-${{matrix.conf.arch}}-libslirp
-            mingw-w64-${{matrix.conf.arch}}-opusfile
-            mingw-w64-${{matrix.conf.arch}}-SDL2
-            mingw-w64-${{matrix.conf.arch}}-SDL2_net
-            mingw-w64-${{matrix.conf.arch}}-zlib
-      
+            mingw-w64-clang-${{matrix.conf.arch}}-clang
+            mingw-w64-clang-${{matrix.conf.arch}}-meson
+            mingw-w64-clang-${{matrix.conf.arch}}-ccache
+            mingw-w64-clang-${{matrix.conf.arch}}-pkgconf
+            mingw-w64-clang-${{matrix.conf.arch}}-ntldd
+            mingw-w64-clang-${{matrix.conf.arch}}-ncurses
+            mingw-w64-clang-${{matrix.conf.arch}}-glib2
+            mingw-w64-clang-${{matrix.conf.arch}}-libpng
+            mingw-w64-clang-${{matrix.conf.arch}}-opusfile
+            mingw-w64-clang-${{matrix.conf.arch}}-libslirp
+            mingw-w64-clang-${{matrix.conf.arch}}-SDL2
+            mingw-w64-clang-${{matrix.conf.arch}}-SDL2_net
+            mingw-w64-clang-${{matrix.conf.arch}}-zlib
+            mingw-w64-clang-${{matrix.conf.arch}}-speexdsp
+
       - name:  Prepare compiler cache
         id:    prep-ccache
         run: |
@@ -206,16 +214,16 @@ jobs:
         id:    cache-ccache
         with:
           path: ${{ steps.prep-ccache.outputs.dir }}
-          key:  ccache-msys2-${{matrix.conf.sys}}-release-${{ steps.prep-ccache.outputs.today }}-2
+          key:  ccache-msys2-${{matrix.conf.sys}}-release-${{ steps.prep-ccache.outputs.today }}-3
           restore-keys: |
-            ccache-msys2-${{matrix.conf.sys}}-release-${{ steps.prep-ccache.outputs.yesterday }}-2
+            ccache-msys2-${{matrix.conf.sys}}-release-${{ steps.prep-ccache.outputs.yesterday }}-3
 
       - name:  Cache subprojects
         uses:  actions/cache@v2
         with:
           path: subprojects/packagecache
-          key:  subprojects-${{ hashFiles('subprojects/*.wrap') }}-1
-      
+          key:  subprojects-${{ hashFiles('subprojects/*.wrap') }}-3
+
       - name: Log environment
         run:  ./scripts/log-env.sh
 
@@ -223,27 +231,36 @@ jobs:
         run: |
           set -x
           git fetch --prune --unshallow
-          git fetch --tags --force
-          export VERSION=$(git describe --abbrev=0)
+          export VERSION=$(git describe --abbrev=5)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-      
+
       - name: Inject package name
         run: |
           set -x
           echo "PKG_RELEASE=dosbox-staging-windows-msys2-${{ matrix.conf.arch }}-${{ env.VERSION }}" >> $GITHUB_ENV
-           
+
       - name: Setup release build
-        run: meson setup $BUILD_FLAGS $BUILD_RELEASE_DIR
+        run: meson setup -Db_lto=true -Db_lto_threads=$(nproc) $BUILD_RELEASE_DIR
 
       - name: Setup debugger build
-        run: meson setup $BUILD_FLAGS -Denable_debugger=normal $BUILD_DEBUGGER_DIR
-      
+        run: meson setup -Db_lto=true -Db_lto_threads=$(nproc) -Denable_debugger=normal $BUILD_DEBUGGER_DIR
+
       - name: Build release
-        run: ninja -C $BUILD_RELEASE_DIR
-      
+        run: |
+          set -euo pipefail
+          scripts/retry_command.sh 2 meson compile -C $BUILD_RELEASE_DIR
+          #
+          # Reason for retry is due to intermittent Python symbol extractor failure
+          # under MSYS2 reported in bug: https://github.com/msys2/MINGW-packages/issues/11864
+
       - name: Build debugger
-        run: ninja -C $BUILD_DEBUGGER_DIR
-            
+        run: |
+          set -euo pipefail
+          scripts/retry_command.sh 2 meson compile -C $BUILD_DEBUGGER_DIR
+          #
+          # Reason for retry is due to intermittent Python symbol extractor failure
+          # under MSYS2 reported in bug: https://github.com/msys2/MINGW-packages/issues/11864
+
       - name: Package
         run: |
           # Package the debug build to bring in required dependencies such as ncurses
@@ -253,7 +270,9 @@ jobs:
             "$PKG_RELEASE"
           mv "${PKG_RELEASE}/dosbox.exe" "${PKG_RELEASE}/dosbox_with_debugger.exe"
           install -DT "${BUILD_RELEASE_DIR}/dosbox.exe" "${PKG_RELEASE}/dosbox.exe"
-      
+          echo "artifact_name=dosbox-staging-windows-x64-`git describe --abbrev=4`" >> $GITHUB_ENV
+          echo "artifact_path=${{ github.workspace }}\msvc" >> $GITHUB_ENV
+
       - name: Windows Defender AV Scan
         shell: powershell
         run: |
@@ -265,11 +284,77 @@ jobs:
               Throw "Exit $LASTEXITCODE : Windows Defender found an issue"
           }
 
+      - name: Wait for MSVC builds to complete
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Publish additional Windows artifacts
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download MSVC artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: windows.yml
+          name: ${{ env.artifact_name }}
+          path: ${{ env.artifact_path }}
+          if_no_artifact_found: warn
+
+      - name: Prepare Windows installer
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/tags/"* ]] && [[ "${{ github.ref }}" != *"-"* ]]; then
+            version_tag=`echo ${{ github.ref }} | sed -r 's/([^\/]*\/){2}//'`
+            packageinfo="release $version_tag"
+          elif [ -n "${{ github.ref }}" ] && [ -n "${{ github.sha }}" ]; then
+            git_branch=`echo ${{ github.ref }} | sed -r 's/([^\/]*\/){2}//'`
+            git_commit=`echo ${{ github.sha }} | awk '{print substr($0,1,9);exit}'`
+            packageinfo="a development branch named $git_branch with commit $git_commit"
+          else
+            packageinfo="a development branch"
+          fi
+          mkdir out
+          echo "version_number=`git describe --tags --abbrev=4`" >> $GITHUB_ENV
+          sed -e "s|%PACKAGE_INFORMATION%|${packageinfo}|;s|%GITHUB_REPO%|${{ github.repository }}|" docs/README.template >out/setup_preamble.txt
+          sed -i "s|DOSBOX-STAGING-VERSION|`git describe --tags --abbrev=4`|" contrib/windows_installer/DOSBox-Staging-setup.iss
+          echo @echo off >out/dosbox_with_console.bat
+          echo \"%~dp0\\dosbox.exe\" %* >>out/dosbox_with_console.bat
+          echo if errorlevel 1 pause >>out/dosbox_with_console.bat
+          if [ -d msvc ]; then
+            cp msvc/dosbox*.exe out
+            mv out/dosbox.exe out/dosbox_msvc.exe
+            mv out/dosbox_with_debugger.exe out/dosbox_msvc_with_debugger.exe
+          else
+            echo Note: MSVC build will not be included in the Windows installer.
+            sed -i -e 's|^\(Name: \"defaultmsvc\"\)|;\1|;s|^\(Source: \"{#DOSBoxAppExeMSVC\)|;\1|;s|; Tasks: not defaultmsvc$||' contrib/windows_installer/DOSBox-Staging-setup.iss
+          fi
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          cd out
+          mkdir program
+          copy ${{ github.workspace }}\contrib\windows_installer\* .
+          copy ${{ github.workspace }}\contrib\icons\dosbox-staging.ico .
+          copy ${{ github.workspace }}\contrib\icons\dosbox-staging.bmp .
+          copy ${{ github.workspace }}\contrib\icons\dosbox-staging-side.bmp .
+          xcopy /s ${{ github.workspace }}\${{ env.PKG_RELEASE }}\* program
+          replace /a ..\msvc\*.dll program
+          move program\dosbox.exe .
+          move program\dosbox_with_debugger.exe .
+          C:\PROGRA~2\INNOSE~1\ISCC.exe DOSBox-Staging-setup.iss
+
       - name: Upload package
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.PKG_RELEASE }}
           path: ${{ env.PKG_RELEASE }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v2
+        with:
+          name: dosbox-staging-${{ env.version_number }}-setup.exe
+          path: ${{ github.workspace }}\out\dosbox-staging-${{ env.version_number }}-setup.exe
 
   # This job exists only to publish an artifact with version info when building
   # from main branch, so snapshot build version will be visible on:
@@ -281,13 +366,15 @@ jobs:
     runs-on: windows-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - name: Generate changelog
         shell: bash
         run: |
           set +x
           git fetch --unshallow
-          git fetch --tags --force
           VERSION=$(git describe --abbrev=4)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           NEWEST_TAG=$(git describe --abbrev=0)

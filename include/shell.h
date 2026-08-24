@@ -30,6 +30,8 @@
 #include "programs.h"
 #endif
 
+#include "help_util.h"
+
 #define CMD_MAXLINE 4096
 #define CMD_MAXCMDS 20
 #define CMD_OLDSIZE 4096
@@ -59,15 +61,24 @@ public:
 	bool echo = false;
 	DOS_Shell *shell = nullptr;
 	std::shared_ptr<BatchFile> prev = {}; // shared with Shell.bf
-	CommandLine *cmd = nullptr;
+	std::unique_ptr<CommandLine> cmd = {};
 	std::string filename{};
 };
 
 class AutoexecEditor;
+
+struct SHELL_Cmd {
+	void (DOS_Shell::*handler)(char *args) = nullptr; // Handler for this command
+	const char *help = "";                       // String with command help
+	HELP_Filter filter = HELP_Filter::Common;
+	HELP_Category category = HELP_Category::Misc;
+};
+
 class DOS_Shell : public Program {
 private:
-	enum class HELP_LIST { ALL, COMMON };
-	void PrintHelpForCommands(HELP_LIST requested_list);
+	void PrintHelpForCommands(HELP_Filter req_filter);
+	void AddShellCmdsToHelpList();
+	bool WriteHelp(const std::string &command, char* args);
 
 	friend class AutoexecEditor;
 	std::list<std::string> l_history{};
@@ -76,6 +87,7 @@ private:
 	char *completion_start = nullptr;
 	uint16_t completion_index = 0;
 	bool exit_cmd_called = false;
+	static inline bool help_list_populated = false;
 
 public:
 
@@ -87,7 +99,7 @@ public:
 	void RunInternal(); // for command /C
 	/* A load of subfunctions */
 	void ParseLine(char * line);
-	Bitu GetRedirection(char *s, char **ifn, char **ofn,bool * append);
+	void GetRedirection(char *s, std::string &ifn, std::string &ofn, std::string &pipe, bool * append);
 	void InputCommand(char * line);
 	void ProcessCmdLineEnvVarStitution(char *line);
 	void ShowPrompt();
@@ -100,6 +112,12 @@ public:
 
 	/* Some internal used functions */
 	const char *Which(const char *name) const;
+
+	//--Added 2013-09-22 by C.W. Betts to let Boxer know that there are no more batch files
+	bool hasNoBatchFiles() const {
+		return batchfiles.empty();
+	}
+	//--End of modifications
 
 	/* Commands */
 	void CMD_HELP(char * args);
@@ -131,18 +149,12 @@ public:
 	void CMD_SHIFT(char * args);
 	void CMD_VER(char * args);
 	void CMD_LS(char *args);
+
 	/* The shell's variables */
 	uint16_t input_handle = 0;
 	std::shared_ptr<BatchFile> bf = {}; // shared with BatchFile.prev
 	bool echo = false;
 	bool call = false;
-};
-
-struct SHELL_Cmd {
-	uint32_t flags = 0;                               // Flags about the command
-	void (DOS_Shell::*handler)(char *args) = nullptr; // Handler for this command
-	const char *help = nullptr;                       // String with command help
-	const char *long_help = nullptr;                  // String with long help (optional)
 };
 
 /* Object to manage lines in the autoexec.bat The lines get removed from

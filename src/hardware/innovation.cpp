@@ -1,5 +1,7 @@
 /*
- *  Copyright (C) 2021-2021  The DOSBox Staging Team
+ *  SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ *  Copyright (C) 2021-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -19,18 +21,17 @@
 
 #include "innovation.h"
 
+#include "checks.h"
 #include "control.h"
 #include "pic.h"
+#include "support.h"
 
-// Innovation Settings
-// -------------------
-constexpr uint16_t SAMPLES_PER_BUFFER = 2048;
+CHECK_NARROWING();
 
 void Innovation::Open(const std::string &model_choice,
-                      const std::string &clock_choice,
-                      const int filter_strength_6581,
-                      const int filter_strength_8580,
-                      const int port_choice)
+                      const std::string &clock_choice, const int filter_strength_6581,
+                      const int filter_strength_8580, const int port_choice,
+                      const std::string &channel_filter_choice)
 {
 	Close();
 
@@ -40,7 +41,7 @@ void Innovation::Open(const std::string &model_choice,
 
 	std::string model_name;
 	int filter_strength = 0;
-	auto sid_service = std::make_unique<reSIDfp::SID>();
+	auto sid_service    = std::make_unique<reSIDfp::SID>();
 
 	// Setup the model and filter
 	if (model_choice == "8580") {
@@ -67,28 +68,48 @@ void Innovation::Open(const std::string &model_choice,
 	else if (clock_choice == "c64ntsc")
 		chip_clock = 1022727.14;
 	else if (clock_choice == "c64pal")
-		chip_clock = 985250;
+		chip_clock = 985250.0;
 	else if (clock_choice == "hardsid")
-		chip_clock = 1000000;
+		chip_clock = 1000000.0;
 	assert(chip_clock);
+	ms_per_clock = millis_in_second / chip_clock;
 
 	// Setup the mixer and get it's sampling rate
 	using namespace std::placeholders;
-	const auto mixer_callback = std::bind(&Innovation::MixerCallBack, this, _1);
-	const auto mixer_channel = MIXER_AddChannel(mixer_callback, 0, "INNOVATION");
-	sid_sample_rate = mixer_channel->GetSampleRate();
+	const auto mixer_callback = std::bind(&Innovation::AudioCallback, this, _1);
+
+	auto mixer_channel = MIXER_AddChannel(mixer_callback,
+	                                      use_mixer_rate,
+	                                      "INNOVATION",
+	                                      {ChannelFeature::Sleep,
+	                                       ChannelFeature::ReverbSend,
+	                                       ChannelFeature::ChorusSend,
+	                                       ChannelFeature::Synthesizer});
+
+	if (!mixer_channel->TryParseAndSetCustomFilter(channel_filter_choice)) {
+		if (channel_filter_choice != "off")
+			LOG_WARNING("INNOVATION: Invalid 'innovation_filter' value: '%s', using 'off'",
+			            channel_filter_choice.c_str());
+
+		mixer_channel->SetHighPassFilter(FilterState::Off);
+		mixer_channel->SetLowPassFilter(FilterState::Off);
+	}
+
+	const auto frame_rate_hz = mixer_channel->GetSampleRate();
 
 	// Determine the passband frequency, which is capped at 90% of Nyquist.
-	const double passband = 0.9 * sid_sample_rate / 2;
+	const double passband = 0.9 * frame_rate_hz / 2;
 
 	// Assign the sampling parameters
-	sid_service->setSamplingParameters(chip_clock, reSIDfp::RESAMPLE,
-	                                   sid_sample_rate, passband);
+	sid_service->setSamplingParameters(chip_clock,
+	                                   reSIDfp::RESAMPLE,
+	                                   frame_rate_hz,
+	                                   passband);
 
 	// Setup and assign the port address
 	const auto read_from = std::bind(&Innovation::ReadFromPort, this, _1, _2);
 	const auto write_to = std::bind(&Innovation::WriteToPort, this, _1, _2, _3);
-	base_port = check_cast<io_port_t>(port_choice);
+	base_port           = check_cast<io_port_t>(port_choice);
 	read_handler.Install(base_port, read_from, io_width_t::byte, 0x20);
 	write_handler.Install(base_port, write_to, io_width_t::byte, 0x20);
 
@@ -97,21 +118,19 @@ void Innovation::Open(const std::string &model_choice,
 	channel = std::move(mixer_channel);
 
 	// Ready state-values for rendering
-	last_used = 0;
-	play_buffer_pos = 0;
-	keep_rendering = true;
+	last_rendered_ms = 0.0;
 
-	// Start rendering
-	renderer = std::thread(std::bind(&Innovation::Render, this));
-	set_thread_name(renderer, "dosbox:innovatn"); // < 16-character cap
-	play_buffer = playable.Dequeue(); // populate the first play buffer
-
+	constexpr auto us_per_s = 1'000'000.0;
 	if (filter_strength == 0)
 		LOG_MSG("INNOVATION: Running on port %xh with a SID %s at %0.3f MHz",
-		        base_port, model_name.c_str(), chip_clock / 1000000.0);
+		        base_port,
+		        model_name.c_str(),
+		        chip_clock / us_per_s);
 	else
 		LOG_MSG("INNOVATION: Running on port %xh with a SID %s at %0.3f MHz filtering at %d%%",
-		        base_port, model_name.c_str(), chip_clock / 1000000.0,
+		        base_port,
+		        model_name.c_str(),
+		        chip_clock / us_per_s,
 		        filter_strength);
 
 	is_open = true;
@@ -128,17 +147,6 @@ void Innovation::Close()
 	if (channel)
 		channel->Enable(false);
 
-	// Stop rendering and drain the queues
-	keep_rendering = false;
-	if (!backstock.Size())
-		backstock.Enqueue(std::move(play_buffer));
-	while (playable.Size())
-		play_buffer = playable.Dequeue();
-
-	// Wait for the rendering thread to finish
-	if (renderer.joinable())
-		renderer.join();
-
 	// Remove the IO handlers before removing the SID device
 	read_handler.Uninstall();
 	write_handler.Uninstall();
@@ -152,88 +160,74 @@ void Innovation::Close()
 uint8_t Innovation::ReadFromPort(io_port_t port, io_width_t)
 {
 	const auto sid_port = static_cast<io_port_t>(port - base_port);
-	const std::lock_guard<std::mutex> lock(service_mutex);
 	return service->read(sid_port);
 }
 
 void Innovation::WriteToPort(io_port_t port, io_val_t value, io_width_t)
 {
+	RenderUpToNow();
+
 	const auto data = check_cast<uint8_t>(value);
 	const auto sid_port = static_cast<io_port_t>(port - base_port);
-	{ // service-lock
-		const std::lock_guard<std::mutex> lock(service_mutex);
-		service->write(sid_port, data);
-	}
-	// Turn on the channel after the data's written
-	if (!last_used) {
-		channel->Enable(true);
-	}
-	last_used = PIC_Ticks;
+	service->write(sid_port, data);
 }
 
-void Innovation::Render()
+void Innovation::RenderUpToNow()
 {
-	const auto cycles_per_sample = static_cast<uint16_t>(chip_clock /
-	                                                     sid_sample_rate);
+	const auto now = PIC_FullIndex();
 
-	// Allocate one buffer and reuse it for the duration.
-	std::vector<int16_t> buffer(SAMPLES_PER_BUFFER);
+	// Wake up the channel and update the last rendered time datum.
+	assert(channel);
+	if (channel->WakeUp()) {
+		last_rendered_ms = now;
+		return;
+	}
+	// Keep rendering until we're current
+	while (last_rendered_ms < now) {
+		last_rendered_ms += ms_per_clock;
+		if (float frame = 0.0f; MaybeRenderFrame(frame))
+			fifo.emplace(frame);
+	}
+}
 
-	// Populate the backstock queue using copies of the current buffer.
-	while (backstock.Size() < backstock.MaxCapacity() - 1)
-		backstock.Enqueue(buffer);    // copied
-	backstock.Enqueue(std::move(buffer)); // moved; buffer is hollow
-	assert(backstock.Size() == backstock.MaxCapacity());
+bool Innovation::MaybeRenderFrame(float &frame)
+{
+	assert(service);
 
-	while (keep_rendering.load()) {
-		// Variables populated during rendering.
-		uint16_t n = 0;
-		buffer = backstock.Dequeue();
-		std::unique_lock<std::mutex> lock(service_mutex);
+	int16_t sample = {0};
 
-		while (n < SAMPLES_PER_BUFFER) {
-			const auto buffer_pos = buffer.data() + n;
-			const auto n_remaining = SAMPLES_PER_BUFFER - n;
-			const auto cycles = static_cast<unsigned int>(cycles_per_sample * n_remaining);
-			n += service->clock(cycles, buffer_pos);
+	const auto frame_is_ready = service->clock(1, &sample);
+
+	// Get the frame
+	if (frame_is_ready)
+		frame = static_cast<float>(sample * 2);
+
+	return frame_is_ready;
+}
+
+void Innovation::AudioCallback(const uint16_t requested_frames)
+{
+	assert(channel);
+
+	//if (fifo.size())
+	//	LOG_MSG("INNOVATION: Queued %2lu cycle-accurate frames", fifo.size());
+
+	auto frames_remaining = requested_frames;
+
+	// First, send any frames we've queued since the last callback
+	while (frames_remaining && fifo.size()) {
+		channel->AddSamples_mfloat(1, &fifo.front());
+		fifo.pop();
+		--frames_remaining;
+	}
+	// If the queue's run dry, render the remainder and sync-up our time datum
+	while (frames_remaining) {
+		if (float frame = 0.0f; MaybeRenderFrame(frame)) {
+			channel->AddSamples_mfloat(1, &frame);
 		}
-		assert(n == SAMPLES_PER_BUFFER);
-		lock.unlock();
-
-		// The buffer is now populated so move it into the playable queue.
-		playable.Enqueue(std::move(buffer));
+		--frames_remaining;
 	}
-}
-
-void Innovation::MixerCallBack(uint16_t requested_samples)
-{
-	while (requested_samples) {
-		const auto n = std::min(GetRemainingSamples(), requested_samples);
-		const auto buffer_pos = play_buffer.data() + play_buffer_pos;
-		channel->AddSamples_m16(n, buffer_pos);
-		requested_samples -= n;
-		play_buffer_pos += n;
-	}
-	// Stop the channel after 5 seconds of idle-time.
-	if (last_used + 5000 < PIC_Ticks) {
-		last_used = 0;
-		channel->Enable(false);
-	}
-}
-
-// Return the number of samples left to play in the current buffer.
-uint16_t Innovation::GetRemainingSamples()
-{
-	// If the current buffer has some samples left, then return those ...
-	if (play_buffer_pos < SAMPLES_PER_BUFFER)
-		return SAMPLES_PER_BUFFER - play_buffer_pos;
-
-	// Otherwise put the spent buffer in backstock and get the next buffer.
-	backstock.Enqueue(std::move(play_buffer));
-	play_buffer = playable.Dequeue();
-	play_buffer_pos = 0; // reset the sample counter to the beginning.
-
-	return SAMPLES_PER_BUFFER;
+	last_rendered_ms = PIC_FullIndex();
 }
 
 Innovation innovation;
@@ -247,14 +241,19 @@ static void innovation_init(Section *sec)
 	assert(sec);
 	Section_prop *conf = static_cast<Section_prop *>(sec);
 
-	const auto model_choice = conf->Get_string("sidmodel");
-	const auto clock_choice = conf->Get_string("sidclock");
-	const auto port_choice = conf->Get_hex("sidport");
-	const auto filter_strength_6581 = conf->Get_int("6581filter");
-	const auto filter_strength_8580 = conf->Get_int("8580filter");
+	const auto model_choice          = conf->Get_string("sidmodel");
+	const auto clock_choice          = conf->Get_string("sidclock");
+	const auto port_choice           = conf->Get_hex("sidport");
+	const auto filter_strength_6581  = conf->Get_int("6581filter");
+	const auto filter_strength_8580  = conf->Get_int("8580filter");
+	const auto channel_filter_choice = conf->Get_string("innovation_filter");
 
-	innovation.Open(model_choice, clock_choice, filter_strength_6581,
-	                filter_strength_8580, port_choice);
+	innovation.Open(model_choice,
+	                clock_choice,
+	                filter_strength_6581,
+	                filter_strength_8580,
+	                port_choice,
+	                channel_filter_choice);
 
 	sec->AddDestroyFunction(&innovation_destroy, true);
 }
@@ -304,6 +303,13 @@ static void init_innovation_dosbox_settings(Section_prop &sec_prop)
 	int_prop->SetMinMax(0, 100);
 	int_prop->Set_help(
 	        "Adjusts the 8580's filtering strength as a percent from 0 to 100.");
+
+	str_prop = sec_prop.Add_string("innovation_filter", when_idle, "off");
+	assert(str_prop);
+	str_prop->Set_help(
+	        "Filter for the Innovation audio output:\n"
+	        "  off:       Don't filter the output (default).\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
 }
 
 void INNOVATION_AddConfigSection(const config_ptr_t &conf)

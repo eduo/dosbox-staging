@@ -34,5 +34,5 @@
 #ifndef GHC_FILESYSTEM_FWD_H
 #define GHC_FILESYSTEM_FWD_H
 #define GHC_FILESYSTEM_FWD
-#include "filesystem.hpp"
+#include <ghc/filesystem.hpp>
 #endif // GHC_FILESYSTEM_FWD_H

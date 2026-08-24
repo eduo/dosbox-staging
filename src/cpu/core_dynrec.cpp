@@ -38,21 +38,18 @@
 
 #include <limits.h>
 
-#ifndef PAGESIZE
-#define PAGESIZE 4096
-#endif
-
 #endif // HAVE_MPROTECT
 
 #include "callback.h"
-#include "regs.h"
-#include "mem.h"
 #include "cpu.h"
 #include "debug.h"
-#include "paging.h"
 #include "inout.h"
 #include "lazyflags.h"
+#include "mem.h"
+#include "paging.h"
 #include "pic.h"
+#include "regs.h"
+#include "tracy.h"
 
 #define CACHE_MAXSIZE	(4096*2)
 #define CACHE_TOTAL		(1024*1024*8)
@@ -126,10 +123,10 @@ static void IllegalOptionDynrec(const char* msg) {
 }
 
 struct core_dynrec_t {
-	BlockReturn (*runcode)(const Bit8u*);		// points to code that can start a block
+	BlockReturn (*runcode)(const uint8_t*);		// points to code that can start a block
 	Bitu callback;				// the occurred callback
 	Bitu readdata;				// spare space used when reading from memory
-	Bit32u protected_regs[8];	// space to save/restore register values
+	uint32_t protected_regs[8];	// space to save/restore register values
 };
 
 static core_dynrec_t core_dynrec;
@@ -212,6 +209,7 @@ CacheBlock *LinkBlocks(BlockReturn ret)
 */
 
 Bits CPU_Core_Dynrec_Run(void) {
+	ZoneScoped
 	for (;;) {
 		// Determine the linear address of CS:EIP
 		PhysPt ip_point=SegPhys(cs)+reg_eip;
@@ -306,7 +304,7 @@ run_block:
 			cpu.exception.which=0;
 			// let the normal core handle the block-modifying
 			// instruction
-			FALLTHROUGH;
+			[[fallthrough]];
 		case BR_Opcode:
 			// some instruction has been encountered that could not be translated
 			// (thus it is not part of the code block), the normal core will

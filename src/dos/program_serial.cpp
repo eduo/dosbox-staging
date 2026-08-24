@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2021-2021  The DOSBox Staging Team
+ *  Copyright (C) 2021-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -26,19 +26,21 @@
 #include "../hardware/serialport/serialdummy.h"
 #include "../hardware/serialport/softmodem.h"
 #include "../hardware/serialport/nullmodem.h"
+#include "../hardware/serialport/serialmouse.h"
 
 // Map the serial port type enums to printable names
 static std::map<SERIAL_PORT_TYPE, const std::string> serial_type_names = {
-        {SERIAL_PORT_TYPE::DISABLED, "disabled"},
-        {SERIAL_PORT_TYPE::DUMMY, "dummy"},
+        {SERIAL_PORT_TYPE::DISABLED,   "disabled"},
+        {SERIAL_PORT_TYPE::DUMMY,      "dummy"},
 #ifdef C_DIRECTSERIAL
-        {SERIAL_PORT_TYPE::DIRECT_SERIAL, "directserial"},
+        {SERIAL_PORT_TYPE::DIRECT,     "direct"},
 #endif
 #if C_MODEM
-        {SERIAL_PORT_TYPE::MODEM, "modem"},
+        {SERIAL_PORT_TYPE::MODEM,      "modem"},
         {SERIAL_PORT_TYPE::NULL_MODEM, "nullmodem"},
 #endif
-        {SERIAL_PORT_TYPE::INVALID, "invalid"},
+        {SERIAL_PORT_TYPE::MOUSE,      "mouse"},
+        {SERIAL_PORT_TYPE::INVALID,    "invalid"},
 };
 
 void SERIAL::showPort(int port)
@@ -56,17 +58,22 @@ void SERIAL::showPort(int port)
 void SERIAL::Run()
 {
 	// Show current serial configurations.
-	if (cmd->FindExist("/l", false) || cmd->FindExist("/list", false)) {
+	if (!cmd->GetCount()) {
 		for (int x = 0; x < SERIAL_MAX_PORTS; x++)
 			showPort(x);
 		return;
 	}
 
 	// Select COM port type.
-	if (cmd->GetCount() >= 2) {
+	if (cmd->GetCount() >= 1 && !HelpRequested()) {
 		// Which COM did they want to change?
+		if (!cmd->FindCommand(1, temp_line)) {
+			// Port number not provided or invalid type
+			WriteOut(MSG_Get("PROGRAM_SERIAL_BAD_PORT"), SERIAL_MAX_PORTS);
+			return;
+		}
+		// A port value was provided, can it be converted to an integer?
 		int port = -1;
-		cmd->FindCommand(1, temp_line);
 		try {
 			port = stoi(temp_line);
 		} catch (...) {
@@ -78,7 +85,10 @@ void SERIAL::Run()
 		}
 		const auto port_index = port - 1;
 		assert(port_index >= 0 && port_index < SERIAL_MAX_PORTS);
-
+		if (cmd->GetCount() == 1) {
+			showPort(port_index);
+			return;
+		}
 		// Which type of device do they want?
 		SERIAL_PORT_TYPE desired_type = SERIAL_PORT_TYPE::INVALID;
 		cmd->FindCommand(2, temp_line);
@@ -90,7 +100,7 @@ void SERIAL::Run()
 		}
 		if (desired_type == SERIAL_PORT_TYPE::INVALID) {
 			// No idea what they asked for.
-			WriteOut(MSG_Get("PROGRAM_SERIAL_BAD_MODE"));
+			WriteOut(MSG_Get("PROGRAM_SERIAL_BAD_TYPE"));
 			for (const auto &type_name : serial_type_names) {
 				if (type_name.first == SERIAL_PORT_TYPE::DISABLED)
 					continue; // Don't show the invalid placeholder.
@@ -110,7 +120,7 @@ void SERIAL::Run()
 		                                           commandLineString.c_str());
 		// Remove existing port.
 		delete serialports[port_index];
-		// Recreate the port with the new mode.
+		// Recreate the port with the new type.
 		switch (desired_type) {
 		case SERIAL_PORT_TYPE::INVALID:
 		case SERIAL_PORT_TYPE::DISABLED:
@@ -118,23 +128,27 @@ void SERIAL::Run()
 			break;
 		case SERIAL_PORT_TYPE::DUMMY:
 			serialports[port_index] = new CSerialDummy(port_index,
-			                                         commandLine);
+			                                           commandLine);
 			break;
 #ifdef C_DIRECTSERIAL
-		case SERIAL_PORT_TYPE::DIRECT_SERIAL:
+		case SERIAL_PORT_TYPE::DIRECT:
 			serialports[port_index] = new CDirectSerial(port_index,
-			                                          commandLine);
+			                                            commandLine);
 			break;
 #endif
 #if C_MODEM
 		case SERIAL_PORT_TYPE::MODEM:
 			serialports[port_index] = new CSerialModem(port_index,
-			                                         commandLine);
+			                                           commandLine);
 			break;
 		case SERIAL_PORT_TYPE::NULL_MODEM:
 			serialports[port_index] = new CNullModem(port_index, commandLine);
 			break;
 #endif
+		case SERIAL_PORT_TYPE::MOUSE:
+			serialports[port_index] = new CSerialMouse(port_index,
+			                                           commandLine);
+			break;
 		default:
 			serialports[port_index] = nullptr;
 			LOG_WARNING("SERIAL: Unknown serial port type %d", desired_type);
@@ -150,10 +164,38 @@ void SERIAL::Run()
 	}
 
 	// Show help.
-	WriteOut(MSG_Get("PROGRAM_SERIAL_HELP"), SERIAL_MAX_PORTS);
+	WriteOut(MSG_Get("SHELL_CMD_SERIAL_HELP_LONG"), SERIAL_MAX_PORTS);
 }
 
-void SERIAL_ProgramStart(Program **make)
-{
-	*make = new SERIAL;
+void SERIAL::AddMessages() {
+	MSG_Add("SHELL_CMD_SERIAL_HELP_LONG",
+	        "Manages the serial ports.\n"
+	        "\n"
+	        "Usage:\n"
+	        "  [color=green]serial[reset] [color=white][PORT#][reset]                   List all or specified ([color=white]1[reset], [color=white]2[reset], [color=white]3[reset], or [color=white]4[reset]) ports.\n"
+	        "  [color=green]serial[reset] [color=white]PORT#[reset] [color=cyan]DEVICE[reset] [settings]   Attach specified device to the given port.\n"
+	        "\n"
+	        "Where:\n"
+	        "  [color=cyan]DEVICE[reset]   One of: [color=cyan]MODEM[reset], [color=cyan]NULLMODEM[reset], [color=cyan]MOUSE[reset], [color=cyan]DIRECT[reset], [color=cyan]DUMMY[reset], or [color=cyan]DISABLED[reset]\n"
+	        "\n"
+	        "  Optional settings for each [color=cyan]DEVICE[reset]:\n"
+	        "  For [color=cyan]MODEM[reset]      : IRQ, LISTENPORT, SOCK\n"
+	        "  For [color=cyan]NULLMODEM[reset]  : IRQ, SERVER, RXDELAY, TXDELAY, TELNET, USEDTR, TRANSPARENT,\n"
+	        "                   PORT, INHSOCKET, SOCK\n"
+	        "  For [color=cyan]MOUSE[reset]      : IRQ, RATE (NORMAL or SMOOTH), TYPE (2BTN, 3BTN, WHEEL, MSM,\n"
+	        "                   2BTN+MSM, 3BTN+MSM, or WHEEL+MSM)\n"
+	        "  For [color=cyan]DIRECT[reset]     : IRQ, REALPORT (required), RXDELAY\n"
+	        "  For [color=cyan]DUMMY[reset]      : IRQ\n"
+	        "\n"
+	        "Examples:\n"
+	        "  [color=green]SERIAL[reset] [color=white]1[reset] [color=cyan]NULLMODEM[reset] PORT:1250                 : Listen on TCP:1250 as server\n"
+	        "  [color=green]SERIAL[reset] [color=white]2[reset] [color=cyan]NULLMODEM[reset] SERVER:10.0.0.6 PORT:1250 : Connect to TCP:1250 as client\n"
+	        "  [color=green]SERIAL[reset] [color=white]3[reset] [color=cyan]MODEM[reset] LISTENPORT:5000 SOCK:1        : Listen on UDP:5000 as server\n"
+	        "  [color=green]SERIAL[reset] [color=white]4[reset] [color=cyan]DIRECT[reset] REALPORT:ttyUSB0             : Use a physical port on Linux\n"
+	        "  [color=green]SERIAL[reset] [color=white]1[reset] [color=cyan]MOUSE[reset] TYPE:MSM                      : Mouse Systems mouse\n");
+	MSG_Add("PROGRAM_SERIAL_SHOW_PORT", "COM%d: %s %s\n");
+	MSG_Add("PROGRAM_SERIAL_BAD_PORT",
+	        "Must specify a numeric port value between 1 and %d, inclusive.\n");
+	MSG_Add("PROGRAM_SERIAL_BAD_TYPE", "Type must be one of the following:\n");
+	MSG_Add("PROGRAM_SERIAL_INDENTED_LIST", "  %s\n");
 }

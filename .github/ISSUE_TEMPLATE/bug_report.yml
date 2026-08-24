@@ -1,6 +1,5 @@
 name: Bug Report
 description: File a Bug report
-title: '[BUG] '
 labels: bug
 #assignees: 'anonymous@temp'
 
@@ -28,7 +27,7 @@ body:
     attributes:
       label: Different version than latest?
       description: Alpha, Git, or Branch?
-      placeholder: "Ex. 0.78.0-alpha, git verion, branch testing."
+      placeholder: "Ex. 0.79.0-alpha, git verion, branch testing."
     validations:
       required: false
   - type: dropdown

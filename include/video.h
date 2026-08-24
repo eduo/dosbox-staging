@@ -19,6 +19,8 @@
 #ifndef DOSBOX_VIDEO_H
 #define DOSBOX_VIDEO_H
 
+#include <string>
+
 #include "types.h"
 
 #define REDUCE_JOYSTICK_POLLING
@@ -56,23 +58,30 @@ typedef void (*GFX_CallBack_t)( GFX_CallBackFunctions_t function );
 // - false means event loop wants to quit.
 bool GFX_Events();
 
+// Let the presentation layer safely call no-op functions.
+// Useful during output initialization or transitions.
+void GFX_DisengageRendering();
+
 Bitu GFX_GetBestMode(Bitu flags);
-int GFX_GetDisplayRefreshRate();
-Bitu GFX_GetRGB(Bit8u red,Bit8u green,Bit8u blue);
-void GFX_SetShader(const char* src);
+Bitu GFX_GetRGB(uint8_t red,uint8_t green,uint8_t blue);
+void GFX_SetShader(const std::string &source);
 Bitu GFX_SetSize(int width, int height, Bitu flags,
                  double scalex, double scaley,
                  GFX_CallBack_t callback,
                  double pixel_aspect);
 
 void GFX_ResetScreen(void);
+void GFX_RequestExit(const bool requested);
 void GFX_Start(void);
 void GFX_Stop(void);
 void GFX_SwitchFullScreen(void);
 bool GFX_StartUpdate(uint8_t * &pixels, int &pitch);
-void GFX_EndUpdate( const Bit16u *changedLines );
+void GFX_EndUpdate( const uint16_t *changedLines );
 void GFX_GetSize(int &width, int &height, bool &fullscreen);
-void GFX_LosingFocus(void);
+void GFX_UpdateMouseState();
+void GFX_LosingFocus();
+void GFX_RegenerateWindow(Section *sec);
+bool GFX_MouseIsAvailable();
 
 #if defined (REDUCE_JOYSTICK_POLLING)
 void MAPPER_UpdateJoysticks(void);

@@ -20,6 +20,7 @@
 
 #include "program_boot.h"
 
+#include <limits>
 #include <stdio.h>
 
 #include "bios_disk.h"
@@ -32,13 +33,13 @@
 #include "regs.h"
 #include "string_utils.h"
 
-FILE *BOOT::getFSFile_mounted(char const *filename, Bit32u *ksize, Bit32u *bsize, Bit8u *error)
+FILE *BOOT::getFSFile_mounted(char const *filename, uint32_t *ksize, uint32_t *bsize, uint8_t *error)
 {
 	// if return NULL then put in error the errormessage code if an error
 	// was requested
 	bool tryload = (*error) ? true : false;
 	*error = 0;
-	Bit8u drive;
+	uint8_t drive;
 	FILE *tmpfile;
 	char fullname[DOS_PATHLENGTH];
 
@@ -83,9 +84,9 @@ FILE *BOOT::getFSFile_mounted(char const *filename, Bit32u *ksize, Bit32u *bsize
 	}
 }
 
-FILE *BOOT::getFSFile(char const *filename, Bit32u *ksize, Bit32u *bsize, bool tryload)
+FILE *BOOT::getFSFile(char const *filename, uint32_t *ksize, uint32_t *bsize, bool tryload)
 {
-	Bit8u error = tryload ? 1 : 0;
+	uint8_t error = tryload ? 1 : 0;
 	FILE *tmpfile = getFSFile_mounted(filename, ksize, bsize, &error);
 	if (tmpfile)
 		return tmpfile;
@@ -152,9 +153,9 @@ void BOOT::Run(void)
 	FILE *usefile_1 = NULL;
 	FILE *usefile_2 = NULL;
 	Bitu i = 0;
-	Bit32u floppysize = 0;
-	Bit32u rombytesize_1 = 0;
-	Bit32u rombytesize_2 = 0;
+	uint32_t floppysize = 0;
+	uint32_t rombytesize_1 = 0;
+	uint32_t rombytesize_2 = 0;
 	char drive = 'A';
 	std::string cart_cmd = "";
 
@@ -163,8 +164,7 @@ void BOOT::Run(void)
 		return;
 	}
 
-	if (cmd->FindExist("/?", false) || cmd->FindExist("-?", false) ||
-	    cmd->FindExist("-h", false) || cmd->FindExist("--help", false)) {
+	if (HelpRequested()) {
 		WriteOut(MSG_Get("SHELL_CMD_BOOT_HELP_LONG"));
 		return;
 	}
@@ -221,12 +221,18 @@ void BOOT::Run(void)
 				continue;
 			}
 
+
+			if (imageDiskList[0] != nullptr || imageDiskList[1] != nullptr) {
+				WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_MOUNTED"));
+				return;
+			}
+
 			if (i >= MAX_SWAPPABLE_DISKS) {
 				return; // TODO give a warning.
 			}
 			WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_OPEN"),
 			         temp_line.c_str());
-			Bit32u rombytesize;
+			uint32_t rombytesize;
 			FILE *usefile = getFSFile(temp_line.c_str(),
 			                          &floppysize, &rombytesize);
 			if (usefile != NULL) {
@@ -264,30 +270,49 @@ void BOOT::Run(void)
 		if (machine != MCH_PCJR) {
 			WriteOut(MSG_Get("PROGRAM_BOOT_CART_WO_PCJR"));
 		} else {
-			Bit8u rombuf[65536];
+			uint8_t rombuf[65536];
 			Bits cfound_at = -1;
 			if (!cart_cmd.empty()) {
+				if (!usefile_1) {
+					WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_NOT_OPEN"), temp_line.c_str());
+					return;
+				}
 				/* read cartridge data into buffer */
-				fseek(usefile_1, 0x200L, SEEK_SET);
-				if (fread(rombuf, 1, rombytesize_1 - 0x200,
-				          usefile_1) < rombytesize_1 - 0x200) {
-					LOG_MSG("Failed to read sufficient cartridge data");
+				constexpr auto seek_pos = 0x200;
+				if (fseek(usefile_1, seek_pos, SEEK_SET) != 0) {
+					LOG_ERR("BOOT: Failed seeking to %d in cartridge data file '%s': %s",
+					        seek_pos, temp_line.c_str(), strerror(errno));
+					return;
+				}
+				const auto rom_bytes_expected = rombytesize_1 - 0x200;
+				const auto rom_bytes_read = fread(
+				        rombuf, 1, rom_bytes_expected, usefile_1);
+				if (rom_bytes_read < rom_bytes_expected) {
+					LOG_ERR("BOOT: Failed to read sufficient cartridge data");
 					fclose(usefile_1);
 					return;
 				}
+				// Null-terminate the buffer
+				rombuf[rom_bytes_read] = '\0';
+
 				char cmdlist[1024];
 				cmdlist[0] = 0;
 				Bitu ct = 6;
-				Bits clen = rombuf[ct];
-				char buf[257];
+
+				auto clen = rombuf[ct];
+				static constexpr auto max_clen =
+				        std::numeric_limits<decltype(clen)>::max();
+				std::array<char, max_clen + 1> buf = {0};
+
 				if (cart_cmd == "?") {
 					while (clen != 0) {
-						strncpy(buf, (char *)&rombuf[ct + 1],
+						strncpy(buf.data(),
+						        (char *)&rombuf[ct + 1],
 						        clen);
 						buf[clen] = 0;
-						upcase(buf);
+						upcase(buf.data());
 						safe_strcat(cmdlist, " ");
-						safe_strcat(cmdlist, buf);
+						safe_strcat(cmdlist, buf.data());
 						ct += 1 + clen + 3;
 						if (ct > sizeof(cmdlist))
 							break;
@@ -307,15 +332,16 @@ void BOOT::Run(void)
 					return;
 				} else {
 					while (clen != 0) {
-						strncpy(buf, (char *)&rombuf[ct + 1],
+						strncpy(buf.data(),
+						        (char *)&rombuf[ct + 1],
 						        clen);
 						buf[clen] = 0;
-						upcase(buf);
+						upcase(buf.data());
 						safe_strcat(cmdlist, " ");
-						safe_strcat(cmdlist, buf);
+						safe_strcat(cmdlist, buf.data());
 						ct += 1 + clen;
 
-						if (cart_cmd == buf) {
+						if (cart_cmd == buf.data()) {
 							cfound_at = ct;
 							break;
 						}
@@ -348,11 +374,11 @@ void BOOT::Run(void)
 			if (usefile_1 == NULL)
 				return;
 
-			Bit32u sz1, sz2;
+			uint32_t sz1, sz2;
 			FILE *tfile = getFSFile("system.rom", &sz1, &sz2, true);
 			if (tfile != NULL) {
 				fseek(tfile, 0x3000L, SEEK_SET);
-				Bit32u drd = (Bit32u)fread(rombuf, 1, 0xb000, tfile);
+				uint32_t drd = (uint32_t)fread(rombuf, 1, 0xb000, tfile);
 				if (drd == 0xb000) {
 					for (i = 0; i < 0xb000; i++)
 						phys_writeb(0xf3000 + i, rombuf[i]);
@@ -395,7 +421,7 @@ void BOOT::Run(void)
 				return;
 			}
 
-			Bit16u romseg = host_readw(&rombuf[0x1ce]);
+			uint16_t romseg = host_readw(&rombuf[0x1ce]);
 
 			/* read cartridge data into buffer */
 			fseek(usefile_1, 0x200L, SEEK_SET);
@@ -417,7 +443,7 @@ void BOOT::Run(void)
 				disk.reset();
 
 			if (cart_cmd.empty()) {
-				Bit32u old_int18 = mem_readd(0x60);
+				uint32_t old_int18 = mem_readd(0x60);
 				/* run cartridge setup */
 				SegSet16(ds, romseg);
 				SegSet16(es, romseg);
@@ -425,7 +451,7 @@ void BOOT::Run(void)
 				reg_esp = 0xfffe;
 				CALLBACK_RunRealFar(romseg, 0x0003);
 
-				Bit32u new_int18 = mem_readd(0x60);
+				uint32_t new_int18 = mem_readd(0x60);
 				if (old_int18 != new_int18) {
 					/* boot cartridge (int18) */
 					SegSet16(cs, RealSeg(new_int18));
@@ -471,7 +497,44 @@ void BOOT::Run(void)
 	}
 }
 
-void BOOT_ProgramStart(Program **make)
-{
-	*make = new BOOT;
+void BOOT::AddMessages() {
+	MSG_Add("SHELL_CMD_BOOT_HELP_LONG",
+	        "Boots DOSBox Staging from a DOS drive or disk image.\n"
+	        "\n"
+	        "Usage:\n"
+	        "  [color=green]boot[reset] [color=white]DRIVE[reset]\n"
+	        "  [color=green]boot[reset] [color=cyan]IMAGEFILE[reset]\n"
+	        "\n"
+	        "Where:\n"
+	        "  [color=white]DRIVE[reset] is a drive to boot from, must be [color=white]A:[reset], [color=white]C:[reset], or [color=white]D:[reset].\n"
+	        "  [color=cyan]IMAGEFILE[reset] is one or more floppy images, separated by spaces.\n"
+	        "\n"
+	        "Notes:\n"
+	        "  A DOS drive letter must have been mounted previously with [color=green]imgmount[reset] command.\n"
+	        "  The DOS drive or disk image must be bootable, containing DOS system files.\n"
+	        "  If more than one disk images are specified, you can swap them with a hotkey.\n"
+	        "\n"
+	        "Examples:\n"
+	        "  [color=green]boot[reset] [color=white]c:[reset]\n"
+	        "  [color=green]boot[reset] [color=cyan]disk1.ima disk2.ima[reset]\n");
+	MSG_Add("PROGRAM_BOOT_NOT_EXIST","Bootdisk file does not exist.  Failing.\n");
+	MSG_Add("PROGRAM_BOOT_NOT_OPEN","Cannot open bootdisk file.  Failing.\n");
+	MSG_Add("PROGRAM_BOOT_WRITE_PROTECTED","Image file is read-only! Might create problems.\n");
+	MSG_Add("PROGRAM_BOOT_PRINT_ERROR",
+	        "This command boots DOSBox Staging from either a floppy or hard disk image.\n\n"
+	        "For this command, one can specify a succession of floppy disks swappable\n"
+	        "by pressing %s+F4, and -l specifies the mounted drive to boot from.  If\n"
+	        "no drive letter is specified, this defaults to booting from the A drive.\n"
+	        "The only bootable drive letters are A, C, and D.  For booting from a hard\n"
+	        "drive (C or D), the image should have already been mounted using the\n"
+	        "\033[34;1mIMGMOUNT\033[0m command.\n\n"
+	        "Type \033[34;1mBOOT /?\033[0m for the syntax of this command.\033[0m\n");
+	MSG_Add("PROGRAM_BOOT_UNABLE","Unable to boot off of drive %c");
+	MSG_Add("PROGRAM_BOOT_IMAGE_OPEN","Opening image file: %s\n");
+	MSG_Add("PROGRAM_BOOT_IMAGE_MOUNTED","Floppy image(s) already mounted.\n");
+	MSG_Add("PROGRAM_BOOT_IMAGE_NOT_OPEN","Cannot open %s");
+	MSG_Add("PROGRAM_BOOT_BOOT","Booting from drive %c...\n");
+	MSG_Add("PROGRAM_BOOT_CART_WO_PCJR","PCjr cartridge found, but machine is not PCjr");
+	MSG_Add("PROGRAM_BOOT_CART_LIST_CMDS", "Available PCjr cartridge commands: %s");
+	MSG_Add("PROGRAM_BOOT_CART_NO_CMDS", "No PCjr cartridge commands found");
 }

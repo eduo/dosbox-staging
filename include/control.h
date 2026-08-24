@@ -29,15 +29,14 @@
 
 #include "programs.h"
 #include "setup.h"
+#include "std_filesystem.h"
 
 enum class Verbosity : int8_t {
-	//                     Splash | Welcome | Early Stdout |
-	Quiet = 0,         //   no    |   no    |    no        |
-	SplashOnly = 1,    //   yes   |   no    |    no        |
-	InstantLaunch = 2, //   no    |   no    |    yes       |
-	Low = 3,           //   no    |   no    |    yes       |
-	Medium = 4,        //   no    |   yes   |    yes       |
-	High = 5,          //   yes   |   yes   |    yes       |
+	//                Welcome | Early Stdout |
+	Quiet,         //   no    |    no        |
+	InstantLaunch, //   no    |    yes       |
+	Low,           //   no    |    yes       |
+	High,          //   yes   |    yes       |
 };
 
 class Config {
@@ -45,13 +44,14 @@ public:
 	CommandLine * cmdline = nullptr;
 private:
 	std::deque<Section*> sectionlist = {};
-	Section_line overwritten_autoexec_section;
+	Section_line overwritten_autoexec_section = {};
 	std::string overwritten_autoexec_conf = {};
 	void (*_start_function)(void) = nullptr;
 	bool secure_mode = false; // Sandbox mode
 public:
 	std::vector<std::string> startup_params = {};
 	std::vector<std::string> configfiles = {};
+	std::vector<std_fs::path> configFilesCanonical = {};
 
 	Config(CommandLine *cmd)
 	        : cmdline(cmd),
@@ -62,8 +62,11 @@ public:
 		cmdline->FillVector(startup_params);
 	}
 
-	Config(const Config&) = delete; // prevent copying
-	Config& operator=(const Config&) = delete; // prevent assignment
+	Config() = default;
+	Config(Config &&source) noexcept;            // move constructor
+	Config(const Config &) = delete;             // block construct-by-value
+	Config &operator=(Config &&source) noexcept; // move assignment
+	Config &operator=(const Config &) = delete;  // block assign-by-value
 
 	~Config();
 

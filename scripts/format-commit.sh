@@ -6,7 +6,8 @@ set -eu
 #
 # Copyright (C) 2020-2021  Patryk Obara <patryk.obara@gmail.com>
 
-readonly SCRIPT=$(basename "$0")
+SCRIPT=$(basename "$0")
+readonly SCRIPT
 
 print_usage () {
 	echo "usage: $SCRIPT [-V|--verify|-d|--diff|-a|--amend] [<commit>]"
@@ -54,7 +55,7 @@ main () {
 handle_dependencies () {
 	assign_gnu_sed
 	assert_min_version git 1007010 "Use git version 1.7.10 or newer."
-	assert_min_version clang-format 9000000 "Use clang-format version 9.0.0 or newer."
+	assert_min_version clang-format 12000000 "Use clang-format version 12.0.0 or newer."
 }
 
 SED=""

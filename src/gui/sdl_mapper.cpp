@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -41,12 +41,23 @@
 #include "joystick.h"
 #include "keyboard.h"
 #include "mapper.h"
+#include "math_utils.h"
 #include "pic.h"
+#include "rgb24.h"
 #include "setup.h"
 #include "string_utils.h"
-#include "support.h"
 #include "timer.h"
 #include "video.h"
+
+//  Status Colors
+//  ~~~~~~~~~~~~~
+//  NFPA 79 standard for illuminated status indicators:
+//  (https://www.nfpa.org/assets/files/AboutTheCodes/79/79-A2002-rop.pdf
+//  pp.1588-1593)
+//
+constexpr rgb24 marginal_color(255, 103, 0); // Amber for marginal conditions
+constexpr rgb24 on_color(0, 1, 0);           // Green for on/ready/in-use
+constexpr rgb24 off_color(0, 0, 0);          // Black for off/stopped/not-in-use
 
 /* Mouse related */
 void GFX_ToggleMouseCapture();
@@ -96,7 +107,7 @@ class CBindGroup;
 
 static void SetActiveEvent(CEvent * event);
 static void SetActiveBind(CBind * _bind);
-extern Bit8u int10_font_14[256 * 14];
+extern uint8_t int10_font_14[256 * 14];
 
 static std::vector<CEvent *> events;
 static std::vector<CButton *> buttons;
@@ -112,7 +123,6 @@ typedef std::vector<CEvent *>::iterator CEventVector_it;
 typedef std::vector<CBindGroup *>::iterator CBindGroup_it;
 
 static CBindList holdlist;
-
 
 class CEvent {
 public:
@@ -235,15 +245,21 @@ public:
 		if (flags & BFLG_Hold) strcat(buf," hold");
 	}
 
-	void SetFlags(char * buf) {
-		char * word;
-		while (*(word=StripWord(buf))) {
-			if (!strcasecmp(word,"mod1")) mods|=BMOD_Mod1;
-			if (!strcasecmp(word,"mod2")) mods|=BMOD_Mod2;
-			if (!strcasecmp(word,"mod3")) mods|=BMOD_Mod3;
-			if (!strcasecmp(word,"hold")) flags|=BFLG_Hold;
+	void SetFlags(char *buf)
+	{
+		char *word;
+		while (*(word = strip_word(buf))) {
+			if (!strcasecmp(word, "mod1"))
+				mods |= BMOD_Mod1;
+			if (!strcasecmp(word, "mod2"))
+				mods |= BMOD_Mod2;
+			if (!strcasecmp(word, "mod3"))
+				mods |= BMOD_Mod3;
+			if (!strcasecmp(word, "hold"))
+				flags |= BFLG_Hold;
 		}
 	}
+
 	void ActivateBind(Bits _value,bool ev_trigger,bool skip_action=false) {
 		if (event->IsTrigger()) {
 			/* use value-boundary for on/off events */
@@ -383,12 +399,12 @@ public:
 	CKeyBindGroup(const CKeyBindGroup&) = delete; // prevent copy
 	CKeyBindGroup& operator=(const CKeyBindGroup&) = delete; // prevent assignment
 
-	CBind * CreateConfigBind(char *& buf)
+	CBind *CreateConfigBind(char *&buf)
 	{
 		if (strncasecmp(buf, configname, strlen(configname)))
 			return nullptr;
-		StripWord(buf);
-		long code = atol(StripWord(buf));
+		strip_word(buf);
+		long code = atol(strip_word(buf));
 		assert(code > 0);
 		return CreateKeyBind((SDL_Scancode)code);
 	}
@@ -550,6 +566,21 @@ protected:
 
 bool autofire = false;
 
+static void set_joystick_led([[maybe_unused]] SDL_Joystick *joystick,
+                             [[maybe_unused]] const rgb24 &color)
+{
+	// Basic joystick LED support was added in SDL 2.0.14
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+	if (!joystick)
+		return;
+	if (!SDL_JoystickHasLED(joystick))
+		return;
+
+	// apply the color
+	SDL_JoystickSetLED(joystick, color.red, color.green, color.blue);
+#endif
+}
+
 class CStickBindGroup : public CBindGroup {
 public:
 	CStickBindGroup(int _stick, uint8_t _emustick, bool _dummy = false)
@@ -576,6 +607,7 @@ public:
 		JOYSTICK_Enable(emustick,true);
 
 		sdl_joystick=SDL_JoystickOpen(_stick);
+		set_joystick_led(sdl_joystick, on_color);
 		if (sdl_joystick==NULL) {
 			button_wrap=emulated_buttons;
 			return;
@@ -607,6 +639,7 @@ public:
 
 	~CStickBindGroup()
 	{
+		set_joystick_led(sdl_joystick, off_color);
 		SDL_JoystickClose(sdl_joystick);
 		sdl_joystick = nullptr;
 
@@ -629,19 +662,19 @@ public:
 	CBind * CreateConfigBind(char *& buf)
 	{
 		if (strncasecmp(configname,buf,strlen(configname))) return 0;
-		StripWord(buf);
-		char *type = StripWord(buf);
+		strip_word(buf);
+		char *type = strip_word(buf);
 		CBind *bind = nullptr;
 		if (!strcasecmp(type,"axis")) {
-			int ax = atoi(StripWord(buf));
-			int pos = atoi(StripWord(buf));
+			int ax = atoi(strip_word(buf));
+			int pos = atoi(strip_word(buf));
 			bind = CreateAxisBind(ax, pos > 0); // TODO double check, previously it was != 0
 		} else if (!strcasecmp(type, "button")) {
-			int but = atoi(StripWord(buf));
+			int but = atoi(strip_word(buf));
 			bind = CreateButtonBind(but);
 		} else if (!strcasecmp(type, "hat")) {
-			uint8_t hat = static_cast<uint8_t>(atoi(StripWord(buf)));
-			uint8_t dir = static_cast<uint8_t>(atoi(StripWord(buf)));
+			uint8_t hat = static_cast<uint8_t>(atoi(strip_word(buf)));
+			uint8_t dir = static_cast<uint8_t>(atoi(strip_word(buf)));
 			bind = CreateHatBind(hat, dir);
 		}
 		return bind;
@@ -1138,7 +1171,7 @@ public:
 		}
 
 		unsigned i;
-		Bit16u j;
+		uint16_t j;
 		j=button_state;
 		for(i=0;i<16;i++) if (j & 1) break; else j>>=1;
 		JOYSTICK_Button(0,0,i&1);
@@ -1211,86 +1244,123 @@ void MAPPER_TriggerEvent(const CEvent *event, const bool deactivation_state) {
 }
 
 class Typer {
-	public:
-		Typer() = default;
-		Typer(const Typer&) = delete; // prevent copy
-		Typer& operator=(const Typer&) = delete; // prevent assignment
-		~Typer() {
-			Stop();
-		}
-		void Start(std::vector<CEvent*>     *ext_events,
-		           std::vector<std::string> &ext_sequence,
-                   const uint32_t           wait_ms,
-                   const uint32_t           pace_ms) {
-			// Guard against empty inputs
-			if (!ext_events || ext_sequence.empty())
-				return;
-			Wait();
-			m_events = ext_events;
-			m_sequence = std::move(ext_sequence);
-			m_wait_ms = wait_ms;
-			m_pace_ms = pace_ms;
-			m_stop_requested = false;
-			m_instance = std::thread(&Typer::Callback, this);
-			set_thread_name(m_instance, "dosbox:autotype");
-		}
-		void Wait() {
-			if (m_instance.joinable())
-				m_instance.join();
-		}
-		void Stop() {
-			m_stop_requested = true;
-			Wait();
-		}
+public:
+	Typer() = default;
+	Typer(const Typer &) = delete;            // prevent copy
+	Typer &operator=(const Typer &) = delete; // prevent assignment
+	~Typer() { Stop(); }
+	void Start(std::vector<CEvent *> *ext_events,
+	           std::vector<std::string> &ext_sequence,
+	           const uint32_t wait_ms,
+	           const uint32_t pace_ms)
+	{
+		// Guard against empty inputs
+		if (!ext_events || ext_sequence.empty())
+			return;
+		Wait();
+		m_events = ext_events;
+		m_sequence = std::move(ext_sequence);
+		m_wait_ms = wait_ms;
+		m_pace_ms = pace_ms;
+		m_stop_requested = false;
+		m_instance = std::thread(&Typer::Callback, this);
+		set_thread_name(m_instance, "dosbox:autotype");
+	}
+	void Wait()
+	{
+		if (m_instance.joinable())
+			m_instance.join();
+	}
+	void Stop()
+	{
+		m_stop_requested = true;
+		Wait();
+	}
+	void StopImmediately()
+	{
+		m_stop_requested = true;
+		if (m_instance.joinable())
+			m_instance.detach();
+	}
 
-	private:
-		void Callback() {
-		        // quit before our initial wait time
-		        if (m_stop_requested)
-			        return;
-		        std::this_thread::sleep_for(std::chrono::milliseconds(m_wait_ms));
-			for (const auto &button : m_sequence) {
-				bool found = false;
-				// comma adds an extra pause, similar to the pause used in a phone number
-				if (button == ",") {
-					found = true;
-					 // quit before the pause
-					if (m_stop_requested)
-						return;
-					std::this_thread::sleep_for(std::chrono::milliseconds(m_pace_ms));
-				// Otherwise trigger the matching button if we have one
-				} else {
-					const std::string bind_name = "key_" + button;
-					for (auto &event : *m_events) {
-						if (bind_name == event->GetName()) {
-							found = true;
-							event->Active(true);
-							std::this_thread::sleep_for(std::chrono::milliseconds(50));
-							event->Active(false);
-							break;
-						}
-					}
-				}
-				/*
-				*  Terminate the sequence for safety reasons if we can't find a button.
-				*  For example, we don't wan't DEAL becoming DEL, or 'rem' becoming 'rm'
-				*/
-				if (!found) {
-					LOG_MSG("MAPPER: Couldn't find a button named '%s', stopping.",
-							button.c_str());
-					return;
-				}
-				if (m_stop_requested) // quit before the pacing delay
-					return;
-				std::this_thread::sleep_for(std::chrono::milliseconds(m_pace_ms));
+private:
+	// find the event for the lshift key and return it
+	CEvent *GetLShiftEvent()
+	{
+		static CEvent *lshift_event = nullptr;
+		for (auto &event : *m_events) {
+			if (std::string("key_lshift") == event->GetName()) {
+				lshift_event = event;
+				break;
 			}
 		}
-		std::thread m_instance = {};
-		std::vector<std::string> m_sequence = {};
-		std::vector<CEvent*>     *m_events = nullptr;
-		uint32_t                 m_wait_ms = 0;
-		uint32_t                 m_pace_ms = 0;
-		std::atomic_bool         m_stop_requested{false};
+		assert(lshift_event);
+		return lshift_event;
+	}
+
+	void Callback()
+	{
+		// quit before our initial wait time
+		if (m_stop_requested)
+			return;
+		std::this_thread::sleep_for(std::chrono::milliseconds(m_wait_ms));
+		for (const auto &button : m_sequence) {
+			if (m_stop_requested)
+				return;
+			bool found = false;
+			// comma adds an extra pause, similar to on phones
+			if (button == ",") {
+				found = true;
+				// quit before the pause
+				if (m_stop_requested)
+					return;
+				std::this_thread::sleep_for(std::chrono::milliseconds(m_pace_ms));
+				// Otherwise trigger the matching button if we have one
+			} else {
+				// is the button an upper case letter?
+				const auto is_cap = button.length() == 1 && isupper(button[0]);
+				const auto maybe_lshift = is_cap ? GetLShiftEvent() : nullptr;
+				const std::string lbutton = is_cap ? std::string{int_to_char(
+				                                             tolower(button[0]))}
+				                                   : button;
+				const std::string bind_name = "key_" + lbutton;
+				for (auto &event : *m_events) {
+					if (bind_name == event->GetName()) {
+						found = true;
+						if (maybe_lshift)
+							maybe_lshift->Active(true);
+						event->Active(true);
+						std::this_thread::sleep_for(
+						        std::chrono::milliseconds(50));
+						event->Active(false);
+						if (maybe_lshift)
+							maybe_lshift->Active(false);
+						break;
+					}
+				}
+			}
+			/*
+			 *  Terminate the sequence for safety reasons if we can't find
+			 * a button. For example, we don't wan't DEAL becoming DEL, or
+			 * 'rem' becoming 'rm'
+			 */
+			if (!found) {
+				LOG_MSG("MAPPER: Couldn't find a button named '%s', stopping.",
+				        button.c_str());
+				return;
+			}
+			if (m_stop_requested) // quit before the pacing delay
+				return;
+			std::this_thread::sleep_for(std::chrono::milliseconds(m_pace_ms));
+		}
+	}
+
+	std::thread m_instance = {};
+	std::vector<std::string> m_sequence = {};
+	std::vector<CEvent *> *m_events = nullptr;
+	uint32_t m_wait_ms = 0;
+	uint32_t m_pace_ms = 0;
+	std::atomic_bool m_stop_requested{false};
 };
 
 static struct CMapper {
@@ -1337,13 +1407,13 @@ void CBindGroup::DeactivateBindList(CBindList * list,bool ev_trigger) {
 	}
 }
 
-static void DrawText(Bitu x,Bitu y,const char * text,Bit8u color) {
-	Bit8u * draw = ((Bit8u *)mapper.draw_surface->pixels) + (y * mapper.draw_surface->w) + x;
+static void DrawText(Bitu x,Bitu y,const char * text,uint8_t color) {
+	uint8_t * draw = ((uint8_t *)mapper.draw_surface->pixels) + (y * mapper.draw_surface->w) + x;
 	while (*text) {
-		Bit8u * font=&int10_font_14[(*text)*14];
-		Bitu i,j;Bit8u * draw_line=draw;
+		uint8_t * font=&int10_font_14[(*text)*14];
+		Bitu i,j;uint8_t * draw_line=draw;
 		for (i=0;i<14;i++) {
-			Bit8u map=*font++;
+			uint8_t map=*font++;
 			for (j=0;j<8;j++) {
 				if (map & 0x80) *(draw_line+j)=color;
 				else *(draw_line+j)=CLR_BLACK;
@@ -1373,7 +1443,7 @@ public:
 	virtual void Draw() {
 		if (!enabled)
 			return;
-		Bit8u * point = ((Bit8u *)mapper.draw_surface->pixels) + (y * mapper.draw_surface->w) + x;
+		uint8_t * point = ((uint8_t *)mapper.draw_surface->pixels) + (y * mapper.draw_surface->w) + x;
 		for (Bitu lines=0;lines<dy;lines++)  {
 			if (lines==0 || lines==(dy-1)) {
 				for (Bitu cols=0;cols<dx;cols++) *(point+cols)=color;
@@ -1395,10 +1465,10 @@ public:
 		mapper.redraw = true;
 	}
 
-	void SetColor(Bit8u _col) { color=_col; }
+	void SetColor(uint8_t _col) { color=_col; }
 protected:
 	Bitu x,y,dx,dy;
-	Bit8u color;
+	uint8_t color;
 	bool enabled;
 };
 
@@ -1489,7 +1559,7 @@ void CCaptionButton::Change(const char * format,...) {
 	mapper.redraw=true;
 }
 
-static void change_action_text(const char* text,Bit8u col);
+static void change_action_text(const char* text,uint8_t col);
 
 static void MAPPER_SaveBinds();
 
@@ -1563,7 +1633,7 @@ public:
 			break;
 		}
 		if (checked) {
-			Bit8u * point=((Bit8u *)mapper.draw_surface->pixels)+((y+2)*mapper.draw_surface->w)+x+dx-dy+2;
+			uint8_t * point=((uint8_t *)mapper.draw_surface->pixels)+((y+2)*mapper.draw_surface->w)+x+dx-dy+2;
 			for (Bitu lines=0;lines<(dy-4);lines++)  {
 				memset(point,color,dy-4);
 				point+=mapper.draw_surface->w;
@@ -1623,7 +1693,7 @@ public:
 	CJAxisEvent& operator=(const CJAxisEvent&) = delete; // prevent assignment
 
 	void Active(bool /*moved*/) {
-		virtual_joysticks[stick].axis_pos[axis]=(Bit16s)(GetValue()*(positive?1:-1));
+		virtual_joysticks[stick].axis_pos[axis]=(int16_t)(GetValue()*(positive?1:-1));
 	}
 	virtual Bitu GetActivityCount() {
 		return activity|opposite_axis->activity;
@@ -1750,7 +1820,7 @@ static struct {
 } bind_but;
 
 
-static void change_action_text(const char* text,Bit8u col) {
+static void change_action_text(const char* text,uint8_t col) {
 	bind_but.action->Change(text,"");
 	bind_but.action->SetColor(col);
 }
@@ -1890,8 +1960,8 @@ static void SetActiveEvent(CEvent * event) {
 	}
 }
 
-extern SDL_Window * GFX_SetSDLSurfaceWindow(Bit16u width, Bit16u height);
-extern SDL_Rect GFX_GetSDLSurfaceSubwindowDims(Bit16u width, Bit16u height);
+extern SDL_Window * GFX_SetSDLSurfaceWindow(uint16_t width, uint16_t height);
+extern SDL_Rect GFX_GetSDLSurfaceSubwindowDims(uint16_t width, uint16_t height);
 extern void GFX_UpdateDisplayDimensions(int width, int height);
 
 static void DrawButtons() {
@@ -2267,7 +2337,7 @@ static SDL_Color map_pal[CLR_LAST]={
 
 static void CreateStringBind(char * line) {
 	line=trim(line);
-	char * eventname=StripWord(line);
+	char * eventname=strip_word(line);
 	CEvent * event = nullptr;
 	for (CEventVector_it ev_it = events.begin(); ev_it != events.end(); ++ev_it) {
 		if (!strcasecmp((*ev_it)->GetName(),eventname)) {
@@ -2279,7 +2349,7 @@ static void CreateStringBind(char * line) {
 	return ;
 foundevent:
 	CBind * bind = nullptr;
-	for (char * bindline=StripWord(line);*bindline;bindline=StripWord(line)) {
+	for (char * bindline=strip_word(line);*bindline;bindline=strip_word(line)) {
 		for (CBindGroup_it it = bindgroups.begin(); it != bindgroups.end(); ++it) {
 			bind=(*it)->CreateConfigBind(bindline);
 			if (bind) {
@@ -2364,7 +2434,9 @@ static struct {
                    {"lalt", SDL_SCANCODE_LALT},
                    {"ralt", SDL_SCANCODE_RALT},
                    {"lctrl", SDL_SCANCODE_LCTRL},
+#if !defined(MACOSX)
                    {"rctrl", SDL_SCANCODE_RCTRL},
+#endif
                    {"lgui", SDL_SCANCODE_LGUI},
                    {"rgui", SDL_SCANCODE_RGUI},
                    {"comma", SDL_SCANCODE_COMMA},
@@ -2429,8 +2501,10 @@ static void CreateDefaultBinds() {
 		CreateStringBind(buffer);
 		i++;
 	}
+#if !defined(MACOSX)
 	sprintf(buffer, "mod_1 \"key %d\"", SDL_SCANCODE_RCTRL);
 	CreateStringBind(buffer);
+#endif
 	sprintf(buffer, "mod_1 \"key %d\"", SDL_SCANCODE_LCTRL);
 	CreateStringBind(buffer);
 	sprintf(buffer, "mod_2 \"key %d\"", SDL_SCANCODE_RALT);
@@ -2693,8 +2767,8 @@ static void QueryJoysticks()
 	if (!wants_auto_config)
 		return;
 
-	// Everythiong below here involves auto-configuring
-	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Everything below here involves auto-configuring
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	const int req_min_axis = std::min(num_joysticks, 2);
 
@@ -2702,8 +2776,12 @@ static void QueryJoysticks()
 	bool useable[2] = {false, false};
 	for (int i = 0; i < req_min_axis; ++i) {
 		SDL_Joystick *stick = SDL_JoystickOpen(i);
+		set_joystick_led(stick, marginal_color);
+
 		useable[i] = (SDL_JoystickNumAxes(stick) >= req_min_axis) ||
 		             (SDL_JoystickNumButtons(stick) > 0);
+
+		set_joystick_led(stick, off_color);
 		SDL_JoystickClose(stick);
 	}
 
@@ -2753,7 +2831,7 @@ static void CreateBindGroups() {
 			mapper.sticks.stick[mapper.sticks.num_groups] = nullptr;
 		}
 
-		Bit8u joyno = 0;
+		uint8_t joyno = 0;
 		switch (joytype) {
 		case JOY_DISABLED:
 		case JOY_NONE_FOUND: break;
@@ -2822,6 +2900,11 @@ void MAPPER_LosingFocus() {
 
 void MAPPER_RunEvent(uint32_t /*val*/)
 {
+	if (!GFX_MouseIsAvailable()) {
+		LOG_ERR("MAPPER: The mapper requires a mouse, but no mouse is available");
+		LOG_WARNING("MAPPER: Set your conf 'capture_mouse' setting to something other than 'nomouse'");
+		return;
+	}
 	KEYBOARD_ClrBuffer();           // Clear buffer
 	GFX_LosingFocus();		//Release any keys pressed (buffer gets filled again).
 	MAPPER_DisplayUI();
@@ -2833,9 +2916,14 @@ void MAPPER_Run(bool pressed) {
 	PIC_AddEvent(MAPPER_RunEvent,0);	//In case mapper deletes the key object that ran it
 }
 
-SDL_Surface* SDL_SetVideoMode_Wrap(int width,int height,int bpp,Bit32u flags);
+SDL_Surface* SDL_SetVideoMode_Wrap(int width,int height,int bpp,uint32_t flags);
 
 void MAPPER_DisplayUI() {
+	// The mapper is about to take-over SDL's surface and rendering
+	// functions, so disengage the main ones. When the mapper closes, SDL
+	// main will recreate its rendering pipeline.
+	GFX_DisengageRendering();
+
 	int cursor = SDL_ShowCursor(SDL_QUERY);
 	SDL_ShowCursor(SDL_ENABLE);
 	bool mousetoggle = false;
@@ -2971,6 +3059,8 @@ void MAPPER_BindKeys(Section *sec)
 
 	if (SDL_GetModState()&KMOD_NUM)
 		MAPPER_TriggerEvent(num_lock_event, false);
+
+	GFX_RegenerateWindow(sec);
 }
 
 std::vector<std::string> MAPPER_GetEventNames(const std::string &prefix) {
@@ -2991,6 +3081,11 @@ void MAPPER_AutoType(std::vector<std::string> &sequence,
                      const uint32_t wait_ms,
                      const uint32_t pace_ms) {
 	mapper.typist.Start(&events, sequence, wait_ms, pace_ms);
+}
+
+void MAPPER_AutoTypeStopImmediately()
+{
+	mapper.typist.StopImmediately();
 }
 
 void MAPPER_StartUp(Section * sec) {

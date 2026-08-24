@@ -42,5 +42,5 @@
 #ifndef GHC_USE_STD_FS
 //#define GHC_WIN_DISABLE_WSTRING_STORAGE_TYPE
 #define GHC_FILESYSTEM_IMPLEMENTATION
-#include "ghc/filesystem.hpp"
+#include <ghc/filesystem.hpp>
 #endif

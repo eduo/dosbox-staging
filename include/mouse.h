@@ -1,4 +1,5 @@
 /*
+ *  Copyright (C) 2022       The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -21,21 +22,61 @@
 
 #include "dosbox.h"
 
-void Mouse_ShowCursor(void);
-void Mouse_HideCursor(void);
+// ***************************************************************************
+// Notifications from external subsystems - all should go via these methods
+// ***************************************************************************
 
-bool Mouse_SetPS2State(bool use);
+void MOUSE_EventMoved(const float x_rel, const float y_rel,
+                      const uint16_t x_abs, const uint16_t y_abs);
+void MOUSE_EventPressed(const uint8_t idx);
+void MOUSE_EventReleased(const uint8_t idx);
+void MOUSE_EventWheel(const int16_t w_rel);
 
-void Mouse_ChangePS2Callback(Bit16u pseg, Bit16u pofs);
+void MOUSE_SetConfig(const bool raw_input);
+void MOUSE_NewScreenParams(const uint16_t clip_x, const uint16_t clip_y,
+                           const uint16_t res_x, const uint16_t res_y,
+                           const bool fullscreen, const uint16_t x_abs,
+                           const uint16_t y_abs);
 
+// ***************************************************************************
+// Common structures and variables
+// ***************************************************************************
 
-void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate);
-void Mouse_CursorSet(float x,float y);
-void Mouse_ButtonPressed(Bit8u button);
-void Mouse_ButtonReleased(Bit8u button);
+// If driver with seamless pointer support is running
+extern bool mouse_seamless_driver;
+// Suggestion to GUI to show host pointer despite other conditions
+extern bool mouse_suggest_show; // TODO: use this information
 
-void Mouse_AutoLock(bool enable);
-void Mouse_BeforeNewVideoMode();
-void Mouse_AfterNewVideoMode(bool setmode);
+// ***************************************************************************
+// Serial mouse
+// ***************************************************************************
 
-#endif
+class CSerialMouse;
+
+void MOUSESERIAL_RegisterListener(CSerialMouse &listener);
+void MOUSESERIAL_UnRegisterListener(CSerialMouse &listener);
+
+// ***************************************************************************
+// BIOS mouse interface for PS/2 mouse
+// ***************************************************************************
+
+bool MOUSEBIOS_SetState(const bool use);
+void MOUSEBIOS_SetCallback(const uint16_t pseg, const uint16_t pofs);
+void MOUSEBIOS_Reset();
+bool MOUSEBIOS_SetPacketSize(const uint8_t packet_size);
+bool MOUSEBIOS_SetSampleRate(const uint8_t rate_id);
+void MOUSEBIOS_SetScaling21(const bool enable);
+bool MOUSEBIOS_SetResolution(const uint8_t res_id);
+uint8_t MOUSEBIOS_GetType();
+uint8_t MOUSEBIOS_GetStatus();
+uint8_t MOUSEBIOS_GetResolution();
+uint8_t MOUSEBIOS_GetSampleRate();
+
+// ***************************************************************************
+// DOS mouse driver
+// ***************************************************************************
+
+void MOUSEDOS_BeforeNewVideoMode();
+void MOUSEDOS_AfterNewVideoMode(const bool setmode);
+
+#endif // DOSBOX_MOUSE_H

@@ -29,20 +29,71 @@
 #include "cross.h"
 #include "drives.h"
 #include "fs_utils.h"
-#include "../../include/ide.h"
+#include "ide.h"
 #include "mapper.h"
 #include "program_mount_common.h"
 #include "shell.h"
+#include "cdrom.h"
 #include "string_utils.h"
 #include "../ints/int10.h"
+
+void IMGMOUNT::ListImgMounts(void)
+{
+	const std::string header_drive = MSG_Get("PROGRAM_MOUNT_STATUS_DRIVE");
+	const std::string header_name = MSG_Get("PROGRAM_MOUNT_STATUS_NAME");
+	const std::string header_label = MSG_Get("PROGRAM_MOUNT_STATUS_LABEL");
+	const std::string header_slot = MSG_Get("PROGRAM_MOUNT_STATUS_SLOT");
+
+	const int term_width = real_readw(BIOSMEM_SEG, BIOSMEM_NB_COLS);
+	const auto width_drive = static_cast<int>(header_drive.length());
+	const auto width_label = std::max(minimum_column_length,
+	                                  static_cast<int>(header_label.length()));
+	const auto width_slot = std::max(minimum_column_length,
+	                                 static_cast<int>(header_slot.length()));
+	const auto width_name = term_width - 4 - width_drive - width_label - width_slot;
+	if (width_name < 0) {
+		LOG_WARNING("Message is too long.");
+		return;
+	}
+
+	auto print_row = [&](const std::string &txt_drive,
+	                     const std::string &txt_name, const std::string &txt_label,
+	                     const std::string &txt_slot) {
+		WriteOut("%-*s %-*s %-*s %-*s\n", width_drive, txt_drive.c_str(),
+		         width_name, txt_name.c_str(), width_label,
+		         txt_label.c_str(), width_slot, txt_slot.c_str());
+	};
+
+	WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_1"));
+	print_row(header_drive, header_name, header_label, header_slot);
+	const std::string horizontal_divider(term_width, '-');
+	WriteOut_NoParsing(horizontal_divider.c_str());
+
+	bool found_drives = false;
+	for (uint8_t d = 0; d < DOS_DRIVES; d++) {
+		std::string disk_info = Drives[d] ? Drives[d]->GetInfo() : "";
+		if (disk_info.substr(0, 9) == "fatDrive " ||
+		    disk_info.substr(0, 9) == "isoDrive ") {
+			print_row(std::string{drive_letter(d)}, disk_info.substr(9),
+			          To_Label(Drives[d]->GetLabel()),
+			          DriveManager::GetDrivePosition(d));
+			found_drives = true;
+		}
+	}
+	if (!found_drives)
+		WriteOut(MSG_Get("PROGRAM_IMGMOUNT_STATUS_NONE"));
+}
 
 void IMGMOUNT::Run(void) {
     //Hack To allow long commandlines
     ChangeToLongCmd();
 
+    if (!cmd->GetCount()) {
+        ListImgMounts();
+        return;
+    }
     // Usage
-    if (!cmd->GetCount() || cmd->FindExist("/?", false) ||
-        cmd->FindExist("-h", false) || cmd->FindExist("--help", false)) {
+    if (HelpRequested()) {
         WriteOut(MSG_Get("SHELL_CMD_IMGMOUNT_HELP_LONG"), PRIMARY_MOD_NAME);
         return;
     }
@@ -85,11 +136,11 @@ void IMGMOUNT::Run(void) {
         return;
     }
 
-    Bit16u sizes[4] = {0};
+    uint16_t sizes[4] = {0};
     bool imgsizedetect = false;
 
     std::string str_size = "";
-    Bit8u mediaid = 0xF8;
+    uint8_t mediaid = 0xF8;
 
     // Possibly used to hold the IDE channel and drive slot for CDROM types
     std::string ide_value = {};
@@ -163,10 +214,17 @@ void IMGMOUNT::Run(void) {
     // find all file parameters, assuming that all option parameters have been removed
     while (cmd->FindCommand((unsigned int)(paths.size() + 2), temp_line) && temp_line.size()) {
         // Try to find the path on native filesystem first
-        const std::string real_path = to_native_path(temp_line);
+        const auto real_path = to_native_path(temp_line);
+        constexpr auto only_expand_files = true;
+        constexpr auto skip_native_path = true;
         if (real_path.empty()) {
-            LOG_MSG("IMGMOUNT: Path '%s' not found, maybe it's a DOS path",
-                    temp_line.c_str());
+            if (get_expanded_files(temp_line, paths, only_expand_files, skip_native_path)) {
+                temp_line = paths[0];
+                continue;
+            } else {
+                LOG_MSG("IMGMOUNT: Path '%s' not found, maybe it's a DOS path",
+                        temp_line.c_str());
+            }
         } else {
             std::string home_resolve = temp_line;
             Cross::ResolveHomedir(home_resolve);
@@ -195,7 +253,7 @@ void IMGMOUNT::Run(void) {
                 char tmp[CROSS_LEN];
                 safe_strcpy(tmp, temp_line.c_str());
 
-                Bit8u dummy;
+                uint8_t dummy;
                 if (!DOS_MakeName(tmp, fullname, &dummy) || strncmp(Drives[dummy]->GetInfo(),"local directory",15)) {
                     WriteOut(MSG_Get("PROGRAM_IMGMOUNT_NON_LOCAL_DRIVE"));
                     return;
@@ -209,9 +267,14 @@ void IMGMOUNT::Run(void) {
                 ldp->GetSystemFilename(tmp, fullname);
                 temp_line = tmp;
 
-                if (stat(temp_line.c_str(),&test)) {
-                    WriteOut(MSG_Get("PROGRAM_IMGMOUNT_FILE_NOT_FOUND"));
-                    return;
+                if (stat(temp_line.c_str(), &test)) {
+                    if (get_expanded_files(temp_line, paths, only_expand_files, skip_native_path)) {
+                        temp_line = paths[0];
+                        continue;
+                    } else {
+                        WriteOut(MSG_Get("PROGRAM_IMGMOUNT_FILE_NOT_FOUND"));
+                        return;
+                    }
                 }
 
                 LOG_MSG("IMGMOUNT: Path '%s' found on virtual drive %c:",
@@ -239,10 +302,10 @@ void IMGMOUNT::Run(void) {
                 return;
             }
             fseek(diskfile, 0L, SEEK_END);
-            Bit32u fcsize = (Bit32u)(ftell(diskfile) / 512L);
-            Bit8u buf[512];
+            uint32_t fcsize = (uint32_t)(ftell(diskfile) / 512L);
+            uint8_t buf[512];
             fseek(diskfile, 0L, SEEK_SET);
-            if (fread(buf,sizeof(Bit8u),512,diskfile)<512) {
+            if (fread(buf,sizeof(uint8_t),512,diskfile)<512) {
                 fclose(diskfile);
                 WriteOut(MSG_Get("PROGRAM_IMGMOUNT_INVALID_IMAGE"));
                 return;
@@ -319,14 +382,13 @@ void IMGMOUNT::Run(void) {
         }
         WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_2"), drive, tmp.c_str());
 
-        if (paths.size() == 1) {
-            auto *newdrive = static_cast<fatDrive*>(imgDisks[0]);
-            if (('A' <= drive && drive <= 'B' && !(newdrive->loadedDisk->hardDrive)) ||
-                ('C' <= drive && drive <= 'D' && newdrive->loadedDisk->hardDrive)) {
-                const size_t idx = drive_index(drive);
-                imageDiskList[idx] = newdrive->loadedDisk;
-                updateDPT();
-            }
+        auto newdrive = static_cast<fatDrive*>(imgDisks[0]);
+        assert(newdrive);
+        if (('A' <= drive && drive <= 'B' && !(newdrive->loadedDisk->hardDrive)) ||
+            ('C' <= drive && drive <= 'D' && newdrive->loadedDisk->hardDrive)) {
+            const size_t idx = drive_index(drive);
+            imageDiskList[idx] = newdrive->loadedDisk;
+            updateDPT();
         }
     } else if (fstype=="iso") {
         if (Drives[drive_index(drive)]) {
@@ -334,6 +396,7 @@ void IMGMOUNT::Run(void) {
             return;
         }
 
+        MSCDEX_SetCDInterface(CDROM_USE_SDL, -1);
         // create new drives for all images
         std::vector<DOS_Drive*> isoDisks;
         std::vector<std::string>::size_type i;
@@ -396,7 +459,7 @@ void IMGMOUNT::Run(void) {
             return;
         }
         fseek(newDisk,0L, SEEK_END);
-        Bit32u imagesize = (ftell(newDisk) / 1024);
+        uint32_t imagesize = (ftell(newDisk) / 1024);
         const bool hdd = (imagesize > 2880);
         //Seems to make sense to require a valid geometry..
         if (hdd && sizes[0] == 0 && sizes[1] == 0 && sizes[2] == 0 && sizes[3] == 0) {
@@ -409,19 +472,88 @@ void IMGMOUNT::Run(void) {
 
         if (hdd) newImage->Set_Geometry(sizes[2],sizes[3],sizes[1],sizes[0]);
         imageDiskList[drive - '0'].reset(newImage);
-        updateDPT();
+
+    	if ((drive == '2' || drive == '3') && hdd)
+		    updateDPT();
+
         WriteOut(MSG_Get("PROGRAM_IMGMOUNT_MOUNT_NUMBER"),drive - '0',temp_line.c_str());
     }
-
-	//--Added 2010-01-18 by Alun Bestor: let Boxer know that the drive state has changed
-	boxer_driveDidMount(drive-'A');
-	//--End of modifications
 
     // check if volume label is given. be careful for cdrom
     //if (cmd->FindString("-label",label,true)) newdrive->dirCache.SetLabel(label.c_str());
     return;
 }
 
-void IMGMOUNT_ProgramStart(Program **make) {
-	*make=new IMGMOUNT;
+void IMGMOUNT::AddMessages() {
+    AddCommonMountMessages();
+	MSG_Add("SHELL_CMD_IMGMOUNT_HELP_LONG",
+	        "Mount a CD-ROM, floppy, or disk image to a drive letter.\n"
+	        "\n"
+	        "Usage:\n"
+	        "  [color=green]imgmount[reset] [color=white]DRIVE[reset] [color=cyan]CDROM-SET[reset] [-fs iso] [-ide] -t cdrom|iso\n"
+	        "  [color=green]imgmount[reset] [color=white]DRIVE[reset] [color=cyan]IMAGEFILE[reset] [IMAGEFILE2 [..]] [-fs fat] -t hdd|floppy -ro\n"
+	        "  [color=green]imgmount[reset] [color=white]DRIVE[reset] [color=cyan]BOOTIMAGE[reset] [-fs fat|none] -t hdd -size GEOMETRY -ro\n"
+	        "  [color=green]imgmount[reset] -u [color=white]DRIVE[reset]  (unmounts the [color=white]DRIVE[reset]'s image)\n"
+	        "\n"
+	        "Where:\n"
+	        "  [color=white]DRIVE[reset]     is the drive letter where the image will be mounted: a, c, d, ...\n"
+	        "  [color=cyan]CDROM-SET[reset] is an ISO, CUE+BIN, CUE+ISO, or CUE+ISO+FLAC/OPUS/OGG/MP3/WAV\n"
+	        "  [color=cyan]IMAGEFILE[reset] is a hard drive or floppy image in FAT16 or FAT12 format\n"
+	        "  [color=cyan]BOOTIMAGE[reset] is a bootable disk image with specified -size GEOMETRY:\n"
+	        "            bytes-per-sector,sectors-per-head,heads,cylinders\n"
+	        "Notes:\n"
+	        "  - %s+F4 swaps & mounts the next [color=cyan]CDROM-SET[reset] or [color=cyan]BOOTIMAGE[reset], if provided.\n"
+	        "  - The -ro flag mounts the disk image in read-only (write-protected) mode.\n"
+	        "  - The -ide flag emulates an IDE controller with attached IDE CD drive, useful\n"
+	        "    for CD-based games that need a real DOS environment via bootable HDD image.\n"
+	        "Examples:\n"
+#if defined(WIN32)
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]C:\\games\\doom.iso[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]cd/quake1.cue[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]A[reset] [color=cyan]floppy1.img floppy2.img floppy3.img[reset] -t floppy -ro\n"
+	        "  [color=green]imgmount[reset] [color=white]C[reset] [color=cyan]bootable.img[reset] -t hdd -fs none -size 512,63,32,1023\n"
+#elif defined(MACOSX)
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]/Users/USERNAME/games/doom.iso[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]cd/quake1.cue[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]A[reset] [color=cyan]floppy1.img floppy2.img floppy3.img[reset] -t floppy -ro\n"
+	        "  [color=green]imgmount[reset] [color=white]C[reset] [color=cyan]bootable.img[reset] -t hdd -fs none -size 512,63,32,1023\n"
+#else
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]/home/USERNAME/games/doom.iso[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]D[reset] [color=cyan]cd/quake1.cue[reset] -t cdrom\n"
+	        "  [color=green]imgmount[reset] [color=white]A[reset] [color=cyan]floppy1.img floppy2.img floppy3.img[reset] -t floppy -ro\n"
+	        "  [color=green]imgmount[reset] [color=white]C[reset] [color=cyan]bootable.img[reset] -t hdd -fs none -size 512,63,32,1023\n"
+#endif
+	);
+    
+    MSG_Add("PROGRAM_IMGMOUNT_STATUS_1",
+	        "The currently mounted disk and CD image drives are:\n");
+	MSG_Add("PROGRAM_IMGMOUNT_SPECIFY_DRIVE",
+	        "Must specify drive letter to mount image at.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_SPECIFY2",
+	        "Must specify drive number (0 or 3) to mount image at (0,1=fda,fdb;2,3=hda,hdb).\n");
+	MSG_Add("PROGRAM_IMGMOUNT_SPECIFY_GEOMETRY",
+		"For \033[33mCD-ROM\033[0m images:   \033[34;1mIMGMOUNT drive-letter location-of-image -t iso\033[0m\n"
+		"\n"
+		"For \033[33mhardrive\033[0m images: Must specify drive geometry for hard drives:\n"
+		"bytes_per_sector, sectors_per_cylinder, heads_per_cylinder, cylinder_count.\n"
+		"\033[34;1mIMGMOUNT drive-letter location-of-image -size bps,spc,hpc,cyl\033[0m\n");
+	MSG_Add("PROGRAM_IMGMOUNT_STATUS_NONE",
+		"No drive available\n");
+	MSG_Add("PROGRAM_IMGMOUNT_IDE_CONTROLLERS_UNAVAILABLE",
+		"No available IDE controllers. Drive will not have IDE emulation.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_INVALID_IMAGE","Could not load image file.\n"
+		"Check that the path is correct and the image is accessible.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_INVALID_GEOMETRY","Could not extract drive geometry from image.\n"
+		"Use parameter -size bps,spc,hpc,cyl to specify the geometry.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_TYPE_UNSUPPORTED",
+	        "Type '%s' is unsupported. Specify 'floppy', 'hdd', 'cdrom', or 'iso'.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_FORMAT_UNSUPPORTED","Format \"%s\" is unsupported. Specify \"fat\" or \"iso\" or \"none\".\n");
+	MSG_Add("PROGRAM_IMGMOUNT_SPECIFY_FILE","Must specify file-image to mount.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_FILE_NOT_FOUND","Image file not found.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_MOUNT","To mount directories, use the \033[34;1mMOUNT\033[0m command, not the \033[34;1mIMGMOUNT\033[0m command.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_ALREADY_MOUNTED","Drive already mounted at that letter.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_CANT_CREATE","Can't create drive from file.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_MOUNT_NUMBER","Drive number %d mounted as %s\n");
+	MSG_Add("PROGRAM_IMGMOUNT_NON_LOCAL_DRIVE", "The image must be on a host or local drive.\n");
+	MSG_Add("PROGRAM_IMGMOUNT_MULTIPLE_NON_CUEISO_FILES", "Using multiple files is only supported for cue/iso images.\n");
 }

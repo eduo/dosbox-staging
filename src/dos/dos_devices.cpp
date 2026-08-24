@@ -258,33 +258,33 @@ class device_NUL : public DOS_Device {
 public:
 	device_NUL() { SetName("NUL"); }
 
-	virtual bool Read(Bit8u * /*data*/,Bit16u * size) {
+	virtual bool Read(uint8_t * /*data*/,uint16_t * size) {
 		*size = 0; //Return success and no data read. 
 		LOG(LOG_IOCTL,LOG_NORMAL)("%s:READ",GetName());
 		return true;
 	}
-	virtual bool Write(Bit8u * /*data*/,Bit16u * /*size*/) {
+	virtual bool Write(uint8_t * /*data*/,uint16_t * /*size*/) {
 		LOG(LOG_IOCTL,LOG_NORMAL)("%s:WRITE",GetName());
 		return true;
 	}
-	virtual bool Seek(Bit32u * /*pos*/,Bit32u /*type*/) {
+	virtual bool Seek(uint32_t * /*pos*/,uint32_t /*type*/) {
 		LOG(LOG_IOCTL,LOG_NORMAL)("%s:SEEK",GetName());
 		return true;
 	}
 	virtual bool Close() { return true; }
 	virtual uint16_t GetInformation() { return 0x8084; }
-	virtual bool ReadFromControlChannel(PhysPt /*bufptr*/,Bit16u /*size*/,Bit16u * /*retcode*/){return false;}
-	virtual bool WriteToControlChannel(PhysPt /*bufptr*/,Bit16u /*size*/,Bit16u * /*retcode*/){return false;}
+	virtual bool ReadFromControlChannel(PhysPt /*bufptr*/,uint16_t /*size*/,uint16_t * /*retcode*/){return false;}
+	virtual bool WriteToControlChannel(PhysPt /*bufptr*/,uint16_t /*size*/,uint16_t * /*retcode*/){return false;}
 };
 
 class device_LPT1 final : public device_NUL {
 public:
-	device_LPT1() { SetName("LPT1");}
+   	device_LPT1() { SetName("LPT1");}
 	uint16_t GetInformation() { return 0x80A0; }
-	bool Read(Bit8u* /*data*/,Bit16u * /*size*/){
+	bool Read(uint8_t* /*data*/,uint16_t * /*size*/){
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
-    }
+	}	
 };
 
 class device_PRN : public DOS_Device {
@@ -292,17 +292,17 @@ public:
 	device_PRN() {
 		SetName("PRN");
 	}
-	bool Read(Bit8u * data,Bit16u * size) {
+	bool Read(uint8_t * data,uint16_t * size) {
 		*size=0;
 		LOG(LOG_DOSMISC,LOG_NORMAL)("PRNDEVICE:Read called");
 		return true;
 	}
-	bool Write(Bit8u * data,Bit16u * size) {
+	bool Write(uint8_t * data,uint16_t * size) {
 		for(int i = 0; i < 3; i++) {
 			// look up a parallel port
 			if(parallelPortObjects[i] != NULL) {
 				// send the data
-				for (Bit16u j=0; j<*size; j++) {
+				for (uint16_t j=0; j<*size; j++) {
 					if(!parallelPortObjects[i]->Putchar(data[j])) return false;
 				}
 				return true;
@@ -310,11 +310,11 @@ public:
 		}
 		return false;
 	}
-	bool Seek(Bit32u * pos,Bit32u type) {
+	bool Seek(uint32_t * pos,uint32_t type) {
 		*pos = 0;
 		return true;
 	}
-	Bit16u GetInformation(void) {
+	uint16_t GetInformation(void) {
 		return 0x80A0;
 	}
 	bool Close() {
@@ -322,15 +322,15 @@ public:
 	}
 };
 
-bool DOS_Device::Read(Bit8u * data,Bit16u * size) {
+bool DOS_Device::Read(uint8_t * data,uint16_t * size) {
 	return Devices[devnum]->Read(data,size);
 }
 
-bool DOS_Device::Write(Bit8u * data,Bit16u * size) {
+bool DOS_Device::Write(uint8_t * data,uint16_t * size) {
 	return Devices[devnum]->Write(data,size);
 }
 
-bool DOS_Device::Seek(Bit32u * pos,Bit32u type) {
+bool DOS_Device::Seek(uint32_t * pos,uint32_t type) {
 	return Devices[devnum]->Seek(pos,type);
 }
 
@@ -338,15 +338,15 @@ bool DOS_Device::Close() {
 	return Devices[devnum]->Close();
 }
 
-uint16_t DOS_Device::GetInformation() {
+uint16_t DOS_Device::GetInformation() { 
 	return Devices[devnum]->GetInformation();
 }
 
-bool DOS_Device::ReadFromControlChannel(PhysPt bufptr,Bit16u size,Bit16u * retcode) {
+bool DOS_Device::ReadFromControlChannel(PhysPt bufptr,uint16_t size,uint16_t * retcode) { 
 	return Devices[devnum]->ReadFromControlChannel(bufptr,size,retcode);
 }
 
-bool DOS_Device::WriteToControlChannel(PhysPt bufptr,Bit16u size,Bit16u * retcode) {
+bool DOS_Device::WriteToControlChannel(PhysPt bufptr,uint16_t size,uint16_t * retcode) { 
 	return Devices[devnum]->WriteToControlChannel(bufptr,size,retcode);
 }
 
@@ -373,19 +373,21 @@ DOS_File &DOS_File::operator=(const DOS_File &orig)
 	return *this;
 }
 
-Bit8u DOS_FindDevice(char const * name) {
+uint8_t DOS_FindDevice(char const * name) {
 	/* should only check for the names before the dot and spacepadded */
-	char fullname[DOS_PATHLENGTH];Bit8u drive;
+	char fullname[DOS_PATHLENGTH];uint8_t drive;
 //	if(!name || !(*name)) return DOS_DEVICES; //important, but makename does it
 	if (!DOS_MakeName(name,fullname,&drive)) return DOS_DEVICES;
 
 	char* name_part = strrchr(fullname,'\\');
 	if(name_part) {
 		*name_part++ = 0;
-		//Check validity of leading directory.
-		if(!Drives[drive]->TestDir(fullname)) return DOS_DEVICES;
-	} else name_part = fullname;
-   
+		// Check validity of leading directory.
+		//  if(!Drives[drive]->TestDir(fullname))
+		//      return DOS_DEVICES; //can be invalid
+	} else
+		name_part = fullname;
+
 	char* dot = strrchr(name_part,'.');
 	if(dot) *dot = 0; //no ext checking
 
@@ -419,7 +421,7 @@ Bit8u DOS_FindDevice(char const * name) {
 		name_part = lpt;
 
 	/* loop through devices */
-	for(Bit8u index = 0;index < DOS_DEVICES;index++) {
+	for(uint8_t index = 0;index < DOS_DEVICES;index++) {
 		if (Devices[index]) {
 			if (WildFileCmp(name_part, Devices[index]->GetName()))
 				return index;

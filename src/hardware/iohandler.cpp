@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -106,7 +106,7 @@ inline void IO_USEC_write_delay() {
 }
 
 #ifdef ENABLE_PORTLOG
-static Bit8u crtc_index = 0;
+static uint8_t crtc_index = 0;
 
 void log_io(io_width_t width, bool write, io_port_t port, io_val_t val)
 {
@@ -117,8 +117,8 @@ void log_io(io_width_t width, bool write, io_port_t port, io_val_t val)
 	if (write) {
 		// skip the video cursor position spam
 		if (port==0x3d4) {
-			if (width==io_width_t::byte) crtc_index = (Bit8u)val;
-			else if(width==io_width_t::word) crtc_index = (Bit8u)(val>>8);
+			if (width==io_width_t::byte) crtc_index = (uint8_t)val;
+			else if(width==io_width_t::word) crtc_index = (uint8_t)(val>>8);
 		}
 		if (crtc_index==0xe || crtc_index==0xf) {
 			if((width==io_width_t::byte && (port==0x3d4 || port==0x3d5))||(width==io_width_t::word && port==0x3d4))
@@ -171,18 +171,16 @@ void IO_WriteB(io_port_t port, uint8_t val)
 {
 	log_io(io_width_t::byte, true, port, val);
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,1)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit8u old_al = reg_al;
-		Bit16u old_dx = reg_dx;
+		uint8_t old_al = reg_al;
+		uint16_t old_dx = reg_dx;
 		reg_al = val;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
@@ -195,7 +193,7 @@ void IO_WriteB(io_port_t port, uint8_t val)
 
 		reg_al = old_al;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 	}
 	else {
@@ -208,18 +206,16 @@ void IO_WriteW(io_port_t port, uint16_t val)
 {
 	log_io(io_width_t::word, true, port, val);
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,2)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit16u old_ax = reg_ax;
-		Bit16u old_dx = reg_dx;
+		uint16_t old_ax = reg_ax;
+		uint16_t old_dx = reg_dx;
 		reg_ax = val;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
@@ -232,7 +228,7 @@ void IO_WriteW(io_port_t port, uint16_t val)
 
 		reg_ax = old_ax;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 	}
 	else {
@@ -245,18 +241,16 @@ void IO_WriteD(io_port_t port, uint32_t val)
 {
 	log_io(io_width_t::dword, true, port, val);
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,4)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit32u old_eax = reg_eax;
-		Bit16u old_dx = reg_dx;
+		uint32_t old_eax = reg_eax;
+		uint16_t old_dx = reg_dx;
 		reg_eax = val;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
@@ -269,7 +263,7 @@ void IO_WriteD(io_port_t port, uint32_t val)
 
 		reg_eax = old_eax;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 	} else {
 		write_dword_to_port(port, val);
@@ -280,18 +274,16 @@ uint8_t IO_ReadB(io_port_t port)
 {
 	uint8_t retval;
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,1)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit8u old_al = reg_al;
-		Bit16u old_dx = reg_dx;
+		uint8_t old_al = reg_al;
+		uint16_t old_dx = reg_dx;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
 		SegSet16(cs,RealSeg(icb));
@@ -304,7 +296,7 @@ uint8_t IO_ReadB(io_port_t port)
 		retval = reg_al;
 		reg_al = old_al;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 		return retval;
 	}
@@ -320,18 +312,16 @@ uint16_t IO_ReadW(io_port_t port)
 {
 	uint16_t retval;
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,2)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit16u old_ax = reg_ax;
-		Bit16u old_dx = reg_dx;
+		uint16_t old_ax = reg_ax;
+		uint16_t old_dx = reg_dx;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
 		SegSet16(cs,RealSeg(icb));
@@ -344,7 +334,7 @@ uint16_t IO_ReadW(io_port_t port)
 		retval = reg_ax;
 		reg_ax = old_ax;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 	}
 	else {
@@ -359,18 +349,16 @@ uint32_t IO_ReadD(io_port_t port)
 {
 	uint32_t retval;
 	if (GCC_UNLIKELY(GETFLAG(VM) && (CPU_IO_Exception(port,4)))) {
-		LazyFlags old_lflags;
-		memcpy(&old_lflags,&lflags,sizeof(LazyFlags));
-		CPU_Decoder * old_cpudecoder;
-		old_cpudecoder=cpudecoder;
+		const auto old_lflags = lflags;
+		const auto old_cpudecoder=cpudecoder;
 		cpudecoder=&IOFaultCore;
 		IOF_Entry * entry=&iof_queue.entries[iof_queue.used++];
 		entry->cs=SegValue(cs);
 		entry->eip=reg_eip;
 		CPU_Push16(SegValue(cs));
 		CPU_Push16(reg_ip);
-		Bit32u old_eax = reg_eax;
-		Bit16u old_dx = reg_dx;
+		uint32_t old_eax = reg_eax;
+		uint16_t old_dx = reg_dx;
 		reg_dx = port;
 		RealPt icb = CALLBACK_RealPointer(call_priv_io);
 		SegSet16(cs,RealSeg(icb));
@@ -383,7 +371,7 @@ uint32_t IO_ReadD(io_port_t port)
 		retval = reg_eax;
 		reg_eax = old_eax;
 		reg_dx = old_dx;
-		memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
+		lflags = old_lflags;
 		cpudecoder=old_cpudecoder;
 	} else {
 		retval = read_dword_from_port(port);

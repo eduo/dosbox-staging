@@ -23,7 +23,7 @@
 #include <string.h>
 
 #include "logging.h"
-#include "support.h"
+#include "string_utils.h"
 
 //--Added 2013-09-22 by Alun Bestor to let Boxer track batch files
 #include "BXCoalface.h"
@@ -64,14 +64,10 @@ BatchFile::BatchFile(DOS_Shell *host,
 }
 
 BatchFile::~BatchFile() {
-	delete cmd;
+	cmd.reset();
 	assert(shell);
 	shell->bf = prev;
 	shell->echo = echo;
-
-    //--Added 2013-09-22 by Alun Bestor to let Boxer track the lifecycle of the batch file
-    boxer_shellDidEndBatchFile(shell, filename.c_str());
-    //--End of modifications
 }
 
 // TODO: Refactor this sprawling function into smaller ones without GOTOs
@@ -227,8 +223,7 @@ bool BatchFile::Goto(char * where) {
 	//Open bat file and search for the where string
 	if (!DOS_OpenFile(filename.c_str(),(DOS_NOT_INHERIT|OPEN_READ),&file_handle)) {
 		LOG(LOG_MISC,LOG_ERROR)("SHELL:Goto Can't open BatchFile %s",filename.c_str());
-		delete this;
-		return false;
+		return false; // Parent deletes this BatchFile on negative return
 	}
 
 	char cmd_buffer[CMD_MAXLINE] = "";
@@ -289,8 +284,7 @@ again:
 	}
 	if (!bytes_read) {
 		DOS_CloseFile(file_handle);
-		delete this;
-		return false;
+		return false; // Parent deletes this BatchFile on negative return
 	}
 	goto again;
 	return false;

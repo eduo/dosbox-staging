@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -45,7 +45,7 @@
 #include "fs_utils.h"
 #include "setup.h"
 #include "string_utils.h"
-#include "support.h"
+#include "math_utils.h"
 
 using namespace std;
 
@@ -158,7 +158,7 @@ int CDROM_Interface_Image::BinaryFile::getLength()
 	return length_redbook_bytes;
 }
 
-Bit16u CDROM_Interface_Image::BinaryFile::getEndian()
+uint16_t CDROM_Interface_Image::BinaryFile::getEndian()
 {
 	// Image files are always little endian
 	return AUDIO_S16LSB;
@@ -442,17 +442,17 @@ uint32_t CDROM_Interface_Image::AudioFile::decode(int16_t *buffer,
 	return frames_decoded;
 }
 
-Bit16u CDROM_Interface_Image::AudioFile::getEndian()
+uint16_t CDROM_Interface_Image::AudioFile::getEndian()
 {
 	return sample ? sample->actual.format : AUDIO_S16SYS;
 }
 
-Bit32u CDROM_Interface_Image::AudioFile::getRate()
+uint32_t CDROM_Interface_Image::AudioFile::getRate()
 {
 	return sample ? sample->actual.rate : 0;
 }
 
-Bit8u CDROM_Interface_Image::AudioFile::getChannels()
+uint8_t CDROM_Interface_Image::AudioFile::getChannels()
 {
 	return sample ? sample->actual.channels : 0;
 }
@@ -491,11 +491,17 @@ CDROM_Interface_Image::CDROM_Interface_Image(uint8_t sub_unit)
 		if (!player.channel) {
 			const auto mixer_callback = std::bind(&CDROM_Interface_Image::CDAudioCallBack,
 			                                      this, std::placeholders::_1);
-			player.channel = MIXER_AddChannel(mixer_callback, 0, "CDAUDIO");
+
+			player.channel = MIXER_AddChannel(mixer_callback,
+			                                  use_mixer_rate,
+			                                  "CDAUDIO",
+			                                  {ChannelFeature::Stereo,
+			                                   ChannelFeature::DigitalAudio});
+
 			player.channel->Enable(false); // only enabled during playback periods
 		}
 #ifdef DEBUG
-		LOG_MSG("CDROM: Initialized the CDAUDIO mixer channel");
+		LOG_MSG("CDROM: Initialized the CDAUDIO audio channel");
 #endif
 	}
 	refCount++;
@@ -518,19 +524,19 @@ CDROM_Interface_Image::~CDROM_Interface_Image()
 	player.channel.reset();
 }
 
-bool CDROM_Interface_Image::SetDevice(char* path)
+bool CDROM_Interface_Image::SetDevice(const char* path, [[maybe_unused]] const int cd_number)
 {
-	const bool result = LoadCueSheet(path) || LoadIsoFile(path);
+	const bool result = LoadCueSheet((char *)path) || LoadIsoFile((char *)path);
 	if (!result) {
 		// print error message on dosbox console
 		//--Disabled 2012-11-07 by Alun Bestor: this is already covered by our own error messages.
 		/*
 		char buf[MAX_LINE_LENGTH];
 		snprintf(buf, MAX_LINE_LENGTH, "Could not load image file: %s\r\n", path);
-		Bit16u size = (Bit16u)strlen(buf);
-		DOS_WriteFile(STDOUT, (Bit8u*)buf, &size);
-		 */
-		//--End of modifications
+		uint16_t size = (uint16_t)strlen(buf);
+		DOS_WriteFile(STDOUT, (uint8_t*)buf, &size);
+         */
+        //--End of modifications
 	}
 	return result;
 }
@@ -792,7 +798,7 @@ bool CDROM_Interface_Image::PlayAudioSector(uint32_t start, uint32_t len)
 #endif
 
 	// start the channel!
-	player.channel->SetFreq(track_rate);
+	player.channel->SetSampleRate(track_rate);
 	player.channel->Enable(true);
 	return true;
 }
@@ -833,12 +839,13 @@ void CDROM_Interface_Image::ChannelControl(TCtrl ctrl)
 	}
 
 	// Adjust the volume of our mixer channel as defined by the application
-	player.channel->SetScale(static_cast<float>(ctrl.vol[0]/255.0),  // left vol
-	                         static_cast<float>(ctrl.vol[1]/255.0)); // right vol
+	player.channel->SetVolumeScale(static_cast<float>(ctrl.vol[0] / 255.0), // left vol
+	                               static_cast<float>(ctrl.vol[1] / 255.0)); // right vol
 
 	// Map the audio channels in our mixer channel as defined by the application
-	player.channel->MapChannels(ctrl.out[0],  // left map
-	                            ctrl.out[1]); // right map
+	const auto left_mapped = static_cast<LINE_INDEX>(ctrl.out[0]);
+	const auto right_mapped = static_cast<LINE_INDEX>(ctrl.out[1]);
+	player.channel->ChangeChannelMap(left_mapped, right_mapped);
 
 #ifdef DEBUG
 	LOG_MSG("CDROM: ChannelControl => volumes %d/255 and %d/255, "
@@ -1014,16 +1021,37 @@ void CDROM_Interface_Image::CDAudioCallBack(uint16_t desired_track_frames)
 		return;
 	}
 
-	const uint32_t decoded_track_frames = track_file->decode(player.buffer,
-	                                                         static_cast<uint32_t>(desired_track_frames));
-	player.playedTrackFrames += decoded_track_frames;
+	const auto decoded_track_frames = check_cast<uint16_t>(
+	        track_file->decode(player.buffer, desired_track_frames));
 
-	/**
-	 *  Uses either the stereo or mono and native or nonnative
-	 *  AddSamples call assigned during construction
-	 */
+	if (!decoded_track_frames) {
+		// This particular CDDA track has come to an end, but the
+		// program has requested we continue playing for a longer
+		// period. So keep going!
+		const auto fraction_played = static_cast<double>(
+		                                     player.playedTrackFrames) /
+		                             player.totalTrackFrames;
+
+		const auto played_redbook_frames = static_cast<uint32_t>(
+		        ceil(fraction_played * player.totalRedbookFrames));
+
+		const auto new_redbook_start_frame = player.startSector +
+		                                     played_redbook_frames;
+
+		const auto remaining_redbook_frames = player.totalRedbookFrames -
+		                                      played_redbook_frames;
+
+		player.cd->PlayAudioSector(new_redbook_start_frame,
+		                           remaining_redbook_frames);
+
+		return;
+	}
+
+	// Use the stereo or mono and native or nonnative AddSamples call
+	// assigned during construction
 	(player.channel.get()->*player.addFrames)(decoded_track_frames, player.buffer);
 
+	player.playedTrackFrames += decoded_track_frames;
 	if (player.playedTrackFrames >= player.totalTrackFrames) {
 #ifdef DEBUG
 		LOG_MSG("CDROM: CDAudioCallBack stopping because "
@@ -1031,21 +1059,6 @@ void CDROM_Interface_Image::CDAudioCallBack(uint16_t desired_track_frames)
 		player.playedTrackFrames, player.totalTrackFrames);
 #endif
 		player.cd->StopAudio();
-
-	} else if (decoded_track_frames == 0) {
-		// Our track has run dry but we still have more music left to play!
-		const double percent_played = static_cast<double>(
-		                              player.playedTrackFrames)
-		                              / player.totalTrackFrames;
-		const Bit32u played_redbook_frames = static_cast<Bit32u>(ceil(
-		                                     percent_played
-		                                     * player.totalRedbookFrames));
-		const Bit32u new_redbook_start_frame = player.startSector
-		                                       + played_redbook_frames;
-		const Bit32u remaining_redbook_frames = player.totalRedbookFrames -
-		                                        played_redbook_frames;
-		player.cd->PlayAudioSector(new_redbook_start_frame, remaining_redbook_frames);
-		return;
 	}
 }
 
@@ -1111,7 +1124,7 @@ bool CDROM_Interface_Image::CanReadPVD(TrackFile *file,
 	if (file == nullptr) return false;
 
 	// Initialize our array in the event file->read() doesn't fully write it
-	Bit8u pvd[BYTES_PER_COOKED_REDBOOK_FRAME] = {0};
+	uint8_t pvd[BYTES_PER_COOKED_REDBOOK_FRAME] = {0};
 
 	uint32_t seek = 16 * sectorSize;  // first vd is located at sector 16
 	if (sectorSize == BYTES_PER_RAW_REDBOOK_FRAME && !mode2) seek += 16;
@@ -1388,7 +1401,7 @@ bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 	char fullname[CROSS_LEN];
 	char tmp[CROSS_LEN];
 	safe_strcpy(tmp, filename.c_str());
-	Bit8u drive;
+	uint8_t drive;
 	if (!DOS_MakeName(tmp, fullname, &drive)) {
 		return false;
 	}

@@ -36,13 +36,13 @@
 
 struct LinkBlock {
 	Bitu used;
-	Bit32u pages[MAX_LINKS];
+	uint32_t pages[MAX_LINKS];
 };
 
 static struct MemoryBlock {
 	Bitu pages;
-	PageHandler * * phandlers;
-	MemHandle * mhandles;
+	PageHandler * phandlers[MAX_PAGE_ENTRIES];
+	MemHandle mhandles[MAX_PAGE_ENTRIES];
 	LinkBlock links;
 	struct	{
 		Bitu		start_page;
@@ -53,11 +53,11 @@ static struct MemoryBlock {
 	} lfb;
 	struct {
 		bool enabled;
-		Bit8u controlport;
+		uint8_t controlport;
 	} a20;
 } memory;
 
-HostPt MemBase;
+alignas(host_pagesize) uint8_t MemBase[MAX_MEMORY*1024*1024];
 
 class IllegalPageHandler final : public PageHandler {
 public:
@@ -97,10 +97,10 @@ public:
 		flags=PFLAG_READABLE|PFLAG_WRITEABLE;
 	}
 	HostPt GetHostReadPt(Bitu phys_page) {
-		return MemBase+phys_page*MEM_PAGESIZE;
+		return MemBase+phys_page*dos_pagesize;
 	}
 	HostPt GetHostWritePt(Bitu phys_page) {
-		return MemBase+phys_page*MEM_PAGESIZE;
+		return MemBase+phys_page*dos_pagesize;
 	}
 };
 
@@ -171,7 +171,7 @@ Bitu mem_strlen(PhysPt pt) {
 }
 
 void mem_strcpy(PhysPt dest,PhysPt src) {
-	Bit8u r;
+	uint8_t r;
 	while ( (r = mem_readb(src++)) ) mem_writeb_inline(dest++,r);
 	mem_writeb_inline(dest,0);
 }
@@ -181,7 +181,7 @@ void mem_memcpy(PhysPt dest,PhysPt src,Bitu size) {
 }
 
 void MEM_BlockRead(PhysPt pt,void * data,Bitu size) {
-	Bit8u * write=reinterpret_cast<Bit8u *>(data);
+	uint8_t * write=reinterpret_cast<uint8_t *>(data);
 	while (size--) {
 		*write++=mem_readb_inline(pt++);
 	}
@@ -201,7 +201,7 @@ void MEM_BlockCopy(PhysPt dest,PhysPt src,Bitu size) {
 
 void MEM_StrCopy(PhysPt pt,char * data,Bitu size) {
 	while (size--) {
-		Bit8u r=mem_readb_inline(pt++);
+		uint8_t r=mem_readb_inline(pt++);
 		if (!r) break;
 		*data++=r;
 	}
@@ -422,22 +422,31 @@ bool MEM_A20_Enabled(void) {
 	return memory.a20.enabled;
 }
 
+// Use this function for initialization since the public 
+// function is optimized to return on the same state, and
+// we need the page mappings initialized for disabled.
+static void InitA20() {
+	memory.a20.enabled = true;
+	MEM_A20_Enable(false);
+}
+
 void MEM_A20_Enable(bool enabled) {
-	Bitu phys_base=enabled ? (1024/4) : 0;
-	for (Bitu i=0;i<16;i++) PAGING_MapPage((1024/4)+i,phys_base+i);
+	if (enabled == memory.a20.enabled) return;
+	const uint32_t phys_base=enabled ? (1024/4) : 0;
+	for (int i=0;i<16;i++) PAGING_MapPage((1024/4)+i,phys_base+i);
 	memory.a20.enabled=enabled;
 }
 
 
 /* Memory access functions */
-Bit16u mem_unalignedreadw(PhysPt address) {
-	Bit16u ret = mem_readb_inline(address);
+uint16_t mem_unalignedreadw(PhysPt address) {
+	uint16_t ret = mem_readb_inline(address);
 	ret       |= mem_readb_inline(address+1) << 8;
 	return ret;
 }
 
-Bit32u mem_unalignedreadd(PhysPt address) {
-	Bit32u ret = mem_readb_inline(address);
+uint32_t mem_unalignedreadd(PhysPt address) {
+	uint32_t ret = mem_readb_inline(address);
 	ret       |= mem_readb_inline(address+1) << 8;
 	ret       |= mem_readb_inline(address+2) << 16;
 	ret       |= mem_readb_inline(address+3) << 24;
@@ -445,20 +454,20 @@ Bit32u mem_unalignedreadd(PhysPt address) {
 }
 
 
-void mem_unalignedwritew(PhysPt address,Bit16u val) {
-	mem_writeb_inline(address,(Bit8u)val);val>>=8;
-	mem_writeb_inline(address+1,(Bit8u)val);
+void mem_unalignedwritew(PhysPt address,uint16_t val) {
+	mem_writeb_inline(address,(uint8_t)val);val>>=8;
+	mem_writeb_inline(address+1,(uint8_t)val);
 }
 
-void mem_unalignedwrited(PhysPt address,Bit32u val) {
-	mem_writeb_inline(address,(Bit8u)val);val>>=8;
-	mem_writeb_inline(address+1,(Bit8u)val);val>>=8;
-	mem_writeb_inline(address+2,(Bit8u)val);val>>=8;
-	mem_writeb_inline(address+3,(Bit8u)val);
+void mem_unalignedwrited(PhysPt address,uint32_t val) {
+	mem_writeb_inline(address,(uint8_t)val);val>>=8;
+	mem_writeb_inline(address+1,(uint8_t)val);val>>=8;
+	mem_writeb_inline(address+2,(uint8_t)val);val>>=8;
+	mem_writeb_inline(address+3,(uint8_t)val);
 }
 
 
-bool mem_unalignedreadw_checked(PhysPt address, Bit16u * val) {
+bool mem_unalignedreadw_checked(PhysPt address, uint16_t * val) {
 	uint8_t rval1;
 	if (mem_readb_checked(address + 0, &rval1))
 		return true;
@@ -471,7 +480,7 @@ bool mem_unalignedreadw_checked(PhysPt address, Bit16u * val) {
 	return false;
 }
 
-bool mem_unalignedreadd_checked(PhysPt address, Bit32u * val) {
+bool mem_unalignedreadd_checked(PhysPt address, uint32_t * val) {
 	uint8_t rval1;
 	if (mem_readb_checked(address+0, &rval1)) return true;
 
@@ -491,45 +500,45 @@ bool mem_unalignedreadd_checked(PhysPt address, Bit32u * val) {
 	return false;
 }
 
-bool mem_unalignedwritew_checked(PhysPt address, Bit16u val) {
-	if (mem_writeb_checked(address+0, (Bit8u)(val & 0xff))) return true;
+bool mem_unalignedwritew_checked(PhysPt address, uint16_t val) {
+	if (mem_writeb_checked(address+0, (uint8_t)(val & 0xff))) return true;
 	val >>= 8;
-	if (mem_writeb_checked(address+1, (Bit8u)(val & 0xff))) return true;
+	if (mem_writeb_checked(address+1, (uint8_t)(val & 0xff))) return true;
 	return false;
 }
 
-bool mem_unalignedwrited_checked(PhysPt address, Bit32u val) {
-	if (mem_writeb_checked(address+0, (Bit8u)(val & 0xff))) return true;
+bool mem_unalignedwrited_checked(PhysPt address, uint32_t val) {
+	if (mem_writeb_checked(address+0, (uint8_t)(val & 0xff))) return true;
 	val >>= 8;
-	if (mem_writeb_checked(address+1, (Bit8u)(val & 0xff))) return true;
+	if (mem_writeb_checked(address+1, (uint8_t)(val & 0xff))) return true;
 	val >>= 8;
-	if (mem_writeb_checked(address+2, (Bit8u)(val & 0xff))) return true;
+	if (mem_writeb_checked(address+2, (uint8_t)(val & 0xff))) return true;
 	val >>= 8;
-	if (mem_writeb_checked(address+3, (Bit8u)(val & 0xff))) return true;
+	if (mem_writeb_checked(address+3, (uint8_t)(val & 0xff))) return true;
 	return false;
 }
 
-Bit8u mem_readb(PhysPt address) {
+uint8_t mem_readb(PhysPt address) {
 	return mem_readb_inline(address);
 }
 
-Bit16u mem_readw(PhysPt address) {
+uint16_t mem_readw(PhysPt address) {
 	return mem_readw_inline(address);
 }
 
-Bit32u mem_readd(PhysPt address) {
+uint32_t mem_readd(PhysPt address) {
 	return mem_readd_inline(address);
 }
 
-void mem_writeb(PhysPt address,Bit8u val) {
+void mem_writeb(PhysPt address,uint8_t val) {
 	mem_writeb_inline(address,val);
 }
 
-void mem_writew(PhysPt address,Bit16u val) {
+void mem_writew(PhysPt address,uint16_t val) {
 	mem_writew_inline(address,val);
 }
 
-void mem_writed(PhysPt address,Bit32u val) {
+void mem_writed(PhysPt address,uint32_t val) {
 	mem_writed_inline(address,val);
 }
 
@@ -589,28 +598,11 @@ public:
 			LOG_MSG("Memory sizes above %d MB are NOT recommended.",SAFE_MEMORY - 1);
 			LOG_MSG("Stick with the default values unless you are absolutely certain.");
 		}
-		MemBase = new (std::nothrow) Bit8u[memsize * 1024 * 1024];
-		if (!MemBase) {
-			E_Exit("Can't allocate main memory of %u MB", memsize);
-		}
 		memset((void*)MemBase, 0, memsize * 1024 * 1024);
 		memory.pages = (memsize * 1024 * 1024) / 4096;
 		LOG_MSG("MEMORY: Base address: %p", static_cast<void *>(MemBase));
 		LOG_MSG("MEMORY: Using %d DOS memory pages (%u MiB)",
 		        static_cast<int>(memory.pages), memsize);
-
-		/* Allocate the data for the different page information blocks */
-		memory.phandlers = new (std::nothrow) PageHandler * [memory.pages];
-		if (!memory.phandlers) {
-			E_Exit("Can't allocate %" PRIuPTR " bytes for the PageHandler array",
-			       sizeof(PageHandler*) * memory.pages);
-		}
-
-		memory.mhandles = new (std::nothrow) MemHandle [memory.pages];
-		if (!memory.mhandles) {
-			E_Exit("Can't allocate %" PRIuPTR " bytes worth of memory handles",
-			       sizeof(MemHandle) * memory.pages);
-		}
 
 		for (i = 0; i < memory.pages; i++) {
 			memory.phandlers[i] = &ram_page_handler;
@@ -635,14 +627,7 @@ public:
 		// A20 Line - PS/2 system control port A
 		WriteHandler.Install(0x92, write_p92, io_width_t::byte);
 		ReadHandler.Install(0x92, read_p92, io_width_t::byte);
-		MEM_A20_Enable(false);
-	}
-
-	~MEMORY()
-	{
-		delete [] MemBase;
-		delete [] memory.phandlers;
-		delete [] memory.mhandles;
+		InitA20();
 	}
 };
 

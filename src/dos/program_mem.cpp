@@ -24,23 +24,22 @@
 #include "regs.h"
 
 void MEM::Run(void) {
-	if (cmd->FindExist("/?", false) || cmd->FindExist("-?", false) ||
-	    cmd->FindExist("-h", false) || cmd->FindExist("--help", false)) {
+	if (HelpRequested()) {
 		WriteOut(MSG_Get("SHELL_CMD_MEM_HELP_LONG"));
 		return;
 	}
     /* Show conventional Memory */
     WriteOut("\n");
 
-    Bit16u umb_start=dos_infoblock.GetStartOfUMBChain();
-    Bit8u umb_flag=dos_infoblock.GetUMBChainState();
-    Bit8u old_memstrat=DOS_GetMemAllocStrategy()&0xff;
+    uint16_t umb_start=dos_infoblock.GetStartOfUMBChain();
+    uint8_t umb_flag=dos_infoblock.GetUMBChainState();
+    uint8_t old_memstrat=DOS_GetMemAllocStrategy()&0xff;
     if (umb_start!=0xffff) {
         if ((umb_flag&1)==1) DOS_LinkUMBsToMemChain(0);
         DOS_SetMemAllocStrategy(0);
     }
 
-    Bit16u seg,blocks;blocks=0xffff;
+    uint16_t seg,blocks;blocks=0xffff;
     DOS_AllocateMemory(&seg,&blocks);
     WriteOut(MSG_Get("PROGRAM_MEM_CONVEN"),blocks*16/1024);
 
@@ -48,7 +47,7 @@ void MEM::Run(void) {
         DOS_LinkUMBsToMemChain(1);
         DOS_SetMemAllocStrategy(0x40);	// search in UMBs only
 
-        Bit16u largest_block=0,total_blocks=0,block_count=0;
+        uint16_t largest_block=0,total_blocks=0,block_count=0;
         for (;; block_count++) {
             blocks=0xffff;
             DOS_AllocateMemory(&seg,&blocks);
@@ -58,7 +57,7 @@ void MEM::Run(void) {
             DOS_AllocateMemory(&seg,&blocks);
         }
 
-        Bit8u current_umb_flag=dos_infoblock.GetUMBChainState();
+        uint8_t current_umb_flag=dos_infoblock.GetUMBChainState();
         if ((current_umb_flag&1)!=(umb_flag&1)) DOS_LinkUMBsToMemChain(umb_flag);
         DOS_SetMemAllocStrategy(old_memstrat);	// restore strategy
 
@@ -69,7 +68,7 @@ void MEM::Run(void) {
     reg_ax=0x4300;CALLBACK_RunRealInt(0x2f);
     if (reg_al==0x80) {
         reg_ax=0x4310;CALLBACK_RunRealInt(0x2f);
-        Bit16u xms_seg=SegValue(es);Bit16u xms_off=reg_bx;
+        uint16_t xms_seg=SegValue(es);uint16_t xms_off=reg_bx;
         reg_ah=8;
         CALLBACK_RunRealFar(xms_seg,xms_off);
         if (!reg_bl) {
@@ -77,7 +76,7 @@ void MEM::Run(void) {
         }
     }
     /* Test for and show free EMS */
-    Bit16u handle;
+    uint16_t handle;
     char emm[9] = { 'E','M','M','X','X','X','X','0',0 };
     if (DOS_OpenFile(emm,0,&handle)) {
         DOS_CloseFile(handle);
@@ -87,6 +86,25 @@ void MEM::Run(void) {
     }
 }
 
-void MEM_ProgramStart(Program * * make) {
-	*make=new MEM;
+void MEM::AddMessages() {
+    MSG_Add("SHELL_CMD_MEM_HELP_LONG",
+	        "Displays the DOS memory information.\n"
+	        "\n"
+	        "Usage:\n"
+	        "  [color=green]mem[reset]\n"
+	        "\n"
+	        "Where:\n"
+	        "  This command has no parameters.\n"
+	        "\n"
+	        "Notes:\n"
+	        "  This command shows the DOS memory status, including the free conventional\n"
+	        "  memory, UMB (upper) memory, XMS (extended) memory, and EMS (expanded) memory.\n"
+	        "\n"
+	        "Examples:\n"
+	        "  [color=green]mem[reset]\n");
+	MSG_Add("PROGRAM_MEM_CONVEN", "%10d kB free conventional memory\n");
+	MSG_Add("PROGRAM_MEM_EXTEND", "%10d kB free extended memory\n");
+	MSG_Add("PROGRAM_MEM_EXPAND", "%10d kB free expanded memory\n");
+	MSG_Add("PROGRAM_MEM_UPPER",
+	        "%10d kB free upper memory in %d blocks (largest UMB %d kB)\n");
 }

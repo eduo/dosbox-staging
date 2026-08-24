@@ -31,7 +31,7 @@
 #include "lazyflags.h"
 #include "support.h"
 
-extern void GFX_SetTitle(Bit32s cycles ,int frameskip,bool paused);
+extern void GFX_SetTitle(int32_t cycles ,int frameskip,bool paused);
 
 #if 1
 #undef LOG
@@ -47,19 +47,18 @@ CPU_Regs cpu_regs = {};
 CPUBlock cpu = {};
 Segments Segs = {};
 
-Bit32s CPU_Cycles = 0;
-Bit32s CPU_CycleLeft = 3000;
-Bit32s CPU_CycleMax = 3000;
-Bit32s CPU_OldCycleMax = 3000;
-Bit32s CPU_CyclePercUsed = 100;
-Bit32s CPU_CycleLimit = -1;
-Bit32s CPU_CycleUp = 0;
-Bit32s CPU_CycleDown = 0;
-Bit64s CPU_IODelayRemoved = 0;
+int32_t CPU_Cycles = 0;
+int32_t CPU_CycleLeft = 3000;
+int32_t CPU_CycleMax = 3000;
+int32_t CPU_OldCycleMax = 3000;
+int32_t CPU_CyclePercUsed = 100;
+int32_t CPU_CycleLimit = -1;
+int32_t CPU_CycleUp = 0;
+int32_t CPU_CycleDown = 0;
+int64_t CPU_IODelayRemoved = 0;
 CPU_Decoder * cpudecoder;
 bool CPU_CycleAutoAdjust = false;
 bool CPU_SkipCycleAutoAdjust = false;
-bool CPU_AllowSpeedMods = false;
 Bitu CPU_AutoDetermineMode = 0;
 
 Bitu CPU_ArchitectureType = CPU_ARCHTYPE_MIXED;
@@ -120,14 +119,14 @@ void CPU_Core_Dynrec_Cache_Close(void);
 
 void Descriptor::Load(PhysPt address) {
 	cpu.mpl=0;
-	Bit32u* data = (Bit32u*)&saved;
+	uint32_t* data = (uint32_t*)&saved;
 	*data	  = mem_readd(address);
 	*(data+1) = mem_readd(address+4);
 	cpu.mpl=3;
 }
 void Descriptor:: Save(PhysPt address) {
 	cpu.mpl=0;
-	Bit32u* data = (Bit32u*)&saved;
+	uint32_t* data = (uint32_t*)&saved;
 	mem_writed(address,*data);
 	mem_writed(address+4,*(data+1));
 	cpu.mpl=03;
@@ -135,13 +134,13 @@ void Descriptor:: Save(PhysPt address) {
 
 
 void CPU_Push16(Bitu value) {
-	Bit32u new_esp=(reg_esp&cpu.stack.notmask)|((reg_esp-2)&cpu.stack.mask);
+	uint32_t new_esp=(reg_esp&cpu.stack.notmask)|((reg_esp-2)&cpu.stack.mask);
 	mem_writew(SegPhys(ss) + (new_esp & cpu.stack.mask) ,value);
 	reg_esp=new_esp;
 }
 
 void CPU_Push32(Bitu value) {
-	Bit32u new_esp=(reg_esp&cpu.stack.notmask)|((reg_esp-4)&cpu.stack.mask);
+	uint32_t new_esp=(reg_esp&cpu.stack.notmask)|((reg_esp-4)&cpu.stack.mask);
 	mem_writed(SegPhys(ss) + (new_esp & cpu.stack.mask) ,value);
 	reg_esp=new_esp;
 }
@@ -156,16 +155,6 @@ Bitu CPU_Pop32(void) {
 	Bitu val=mem_readd(SegPhys(ss) + (reg_esp & cpu.stack.mask));
 	reg_esp=(reg_esp&cpu.stack.notmask)|((reg_esp+4)&cpu.stack.mask);
 	return val;
-}
-
-PhysPt SelBase(Bitu sel) {
-	if (cpu.cr0 & CR0_PROTECTION) {
-		Descriptor desc;
-		cpu.gdt.GetDescriptor(sel,desc);
-		return desc.GetBase();
-	} else {
-		return sel<<4;
-	}
 }
 
 void CPU_SetFlags(const uint32_t word, uint32_t mask)
@@ -296,7 +285,7 @@ public:
 
 	Bitu Get_back(void) {
 		cpu.mpl=0;
-		Bit16u backlink=mem_readw(base);
+		uint16_t backlink=mem_readw(base);
 		cpu.mpl=3;
 		return backlink;
 	}
@@ -415,7 +404,7 @@ bool CPU_SwitchTask(Bitu new_tss_selector,TSwitchType tstype,Bitu old_eip) {
 		cpu_tss.desc.SetBusy(false);
 		cpu_tss.SaveSelector();
 	}
-	Bit32u old_flags = reg_flags;
+	uint32_t old_flags = reg_flags;
 	if (tstype==TSwitch_IRET) old_flags &= (~FLAG_NT);
 
 	/* Save current context in current TSS */
@@ -548,7 +537,7 @@ doexception:
 	return CPU_PrepareException(EXCEPTION_GP,0);
 }
 
-void CPU_DebugException(Bit32u triggers,Bitu oldeip) {
+void CPU_DebugException(uint32_t triggers,Bitu oldeip) {
 	cpu.drx[6] = (cpu.drx[6] & 0xFFFF1FF0) | triggers;
 	CPU_Interrupt(EXCEPTION_DB,CPU_INT_EXCEPTION,oldeip);
 }
@@ -559,7 +548,7 @@ void CPU_Exception(Bitu which,Bitu error ) {
 	CPU_Interrupt(which,CPU_INT_EXCEPTION | ((which>=8) ? CPU_INT_HAS_ERROR : 0),reg_eip);
 }
 
-Bit8u lastint;
+uint8_t lastint;
 void CPU_Interrupt(Bitu num,Bitu type,Bitu oldeip) {
 	if (num == EXCEPTION_DB && (type&CPU_INT_EXCEPTION) == 0) {
 		CPU_DebugException(0,oldeip); // DR6 bits need updating
@@ -805,26 +794,26 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 				return;
 			} else {
 				if (use32) {
-					Bit32u new_eip=mem_readd(SegPhys(ss) + (reg_esp & cpu.stack.mask));
-					Bit32u tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+4)&cpu.stack.mask);
-					Bit32u new_cs=mem_readd(SegPhys(ss) + (tempesp & cpu.stack.mask));
+					uint32_t new_eip=mem_readd(SegPhys(ss) + (reg_esp & cpu.stack.mask));
+					uint32_t tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+4)&cpu.stack.mask);
+					uint32_t new_cs=mem_readd(SegPhys(ss) + (tempesp & cpu.stack.mask));
 					tempesp=(tempesp&cpu.stack.notmask)|((tempesp+4)&cpu.stack.mask);
-					Bit32u new_flags=mem_readd(SegPhys(ss) + (tempesp & cpu.stack.mask));
+					uint32_t new_flags=mem_readd(SegPhys(ss) + (tempesp & cpu.stack.mask));
 					reg_esp=(tempesp&cpu.stack.notmask)|((tempesp+4)&cpu.stack.mask);
 
 					reg_eip=new_eip;
-					SegSet16(cs,(Bit16u)(new_cs&0xffff));
+					SegSet16(cs,(uint16_t)(new_cs&0xffff));
 					/* IOPL can not be modified in v86 mode by IRET */
 					CPU_SetFlags(new_flags,FMASK_NORMAL|FLAG_NT);
 				} else {
-					Bit16u new_eip=mem_readw(SegPhys(ss) + (reg_esp & cpu.stack.mask));
-					Bit32u tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+2)&cpu.stack.mask);
-					Bit16u new_cs=mem_readw(SegPhys(ss) + (tempesp & cpu.stack.mask));
+					uint16_t new_eip=mem_readw(SegPhys(ss) + (reg_esp & cpu.stack.mask));
+					uint32_t tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+2)&cpu.stack.mask);
+					uint16_t new_cs=mem_readw(SegPhys(ss) + (tempesp & cpu.stack.mask));
 					tempesp=(tempesp&cpu.stack.notmask)|((tempesp+2)&cpu.stack.mask);
-					Bit16u new_flags=mem_readw(SegPhys(ss) + (tempesp & cpu.stack.mask));
+					uint16_t new_flags=mem_readw(SegPhys(ss) + (tempesp & cpu.stack.mask));
 					reg_esp=(tempesp&cpu.stack.notmask)|((tempesp+2)&cpu.stack.mask);
 
-					reg_eip=(Bit32u)new_eip;
+					reg_eip=(uint32_t)new_eip;
 					SegSet16(cs,new_cs);
 					/* IOPL can not be modified in v86 mode by IRET */
 					CPU_SetFlags(new_flags,FMASK_NORMAL|FLAG_NT);
@@ -848,7 +837,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 			return;
 		}
 		Bitu n_cs_sel,n_eip,n_flags;
-		Bit32u tempesp;
+		uint32_t tempesp;
 		if (use32) {
 			n_eip=mem_readd(SegPhys(ss) + (reg_esp & cpu.stack.mask));
 			tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+4)&cpu.stack.mask);
@@ -1243,7 +1232,7 @@ call_code:
 						}
 
 						cpu.cpl = n_cs_desc.DPL();
-						Bit16u oldcs    = SegValue(cs);
+						uint16_t oldcs    = SegValue(cs);
 						/* Switch to new CS:EIP */
 						Segs.phys[cs]	= n_cs_desc.GetBase();
 						Segs.val[cs]	= (n_cs_sel & 0xfffc) | cpu.cpl;
@@ -1658,7 +1647,7 @@ Bitu CPU_GET_CRX(Bitu cr) {
 	return 0;
 }
 
-bool CPU_READ_CRX(Bitu cr,Bit32u & retvalue) {
+bool CPU_READ_CRX(Bitu cr,uint32_t & retvalue) {
 	/* Check if privileged to access control registers */
 	if (cpu.pmode && (cpu.cpl>0)) return CPU_PrepareException(EXCEPTION_GP,0);
 	if ((cr==1) || (cr>4)) return CPU_PrepareException(EXCEPTION_UD,0);
@@ -1696,7 +1685,7 @@ bool CPU_WRITE_DRX(Bitu dr,Bitu value) {
 	return false;
 }
 
-bool CPU_READ_DRX(Bitu dr,Bit32u & retvalue) {
+bool CPU_READ_DRX(Bitu dr,uint32_t & retvalue) {
 	/* Check if privileged to access control registers */
 	if (cpu.pmode && (cpu.cpl>0)) return CPU_PrepareException(EXCEPTION_GP,0);
 	switch (dr) {
@@ -1738,7 +1727,7 @@ bool CPU_WRITE_TRX(Bitu tr,Bitu value) {
 	return CPU_PrepareException(EXCEPTION_UD,0);
 }
 
-bool CPU_READ_TRX(Bitu tr,Bit32u & retvalue) {
+bool CPU_READ_TRX(Bitu tr,uint32_t & retvalue) {
 	/* Check if privileged to access control registers */
 	if (cpu.pmode && (cpu.cpl>0)) return CPU_PrepareException(EXCEPTION_GP,0);
 	switch (tr) {
@@ -2011,7 +2000,7 @@ bool CPU_PopSeg(SegNames seg,bool use32) {
 	Bitu val=mem_readw(SegPhys(ss) + (reg_esp & cpu.stack.mask));
 	Bitu addsp = use32 ? 0x04 : 0x02;
 	//Calcullate this beforehande since the stack mask might change
-	Bit32u new_esp  = (reg_esp&cpu.stack.notmask) | ((reg_esp + addsp)&cpu.stack.mask);
+	uint32_t new_esp  = (reg_esp&cpu.stack.notmask) | ((reg_esp + addsp)&cpu.stack.mask);
 	if (CPU_SetSegGeneral(seg,val)) return true;
 	reg_esp = new_esp;
 	return false;
@@ -2094,7 +2083,7 @@ void CPU_ENTER(bool use32,Bitu bytes,Bitu level) {
 	if (!use32) {
 		sp_index-=2;
 		mem_writew(SegPhys(ss)+sp_index,reg_bp);
-		reg_bp=(Bit16u)(reg_esp-2);
+		reg_bp=(uint16_t)(reg_esp-2);
 		if (level) {
 			for (Bitu i=1;i<level;i++) {	
 				sp_index-=2;bp_index-=2;
@@ -2128,9 +2117,9 @@ static void CPU_CycleIncrease(bool pressed) {
 		LOG_MSG("CPU speed: max %d percent.",CPU_CyclePercUsed);
 		GFX_SetTitle(CPU_CyclePercUsed,-1,false);
 	} else {
-		Bit32s old_cycles=CPU_CycleMax;
+		int32_t old_cycles=CPU_CycleMax;
 		if (CPU_CycleUp < 100) {
-			CPU_CycleMax = (Bit32s)(CPU_CycleMax *
+			CPU_CycleMax = (int32_t)(CPU_CycleMax *
 			                        (1 + static_cast<float>(CPU_CycleUp) /
 			                                     100.0f));
 		} else {
@@ -2159,7 +2148,7 @@ static void CPU_CycleDecrease(bool pressed) {
 		GFX_SetTitle(CPU_CyclePercUsed,-1,false);
 	} else {
 		if (CPU_CycleDown < 100) {
-			CPU_CycleMax = (Bit32s)(CPU_CycleMax /
+			CPU_CycleMax = (int32_t)(CPU_CycleMax /
 			                        (1 + static_cast<float>(CPU_CycleDown) /
 			                                     100.0f));
 		} else {
@@ -2271,84 +2260,75 @@ public:
 		CPU_Cycles=0;
 		CPU_SkipCycleAutoAdjust=false;
 
-		Prop_multival* p = section->Get_multival("cycles");
+		// Sets the value if the string in within the min and max values
+		auto set_if_in_range = [](const std::string &str, int &value,
+		                          const int min_value = 1,
+		                          const int max_value = 0) {
+			std::istringstream stream(str);
+			int v = 0;
+			stream >> v;
+			const bool within_min = (v >= min_value);
+			const bool within_max = (!max_value || v <= max_value);
+			if (within_min && within_max)
+				value = v;
+		};
+
+		PropMultiVal *p = section->GetMultiVal("cycles");
 		std::string type = p->GetSection()->Get_string("type");
-		std::string str ;
-		CommandLine cmd(0,p->GetSection()->Get_string("parameters"));
-		if (type=="max") {
-			CPU_CycleMax=0;
-			CPU_CyclePercUsed=100;
-			CPU_CycleAutoAdjust=true;
-			CPU_CycleLimit=-1;
-			for (Bitu cmdnum=1; cmdnum<=cmd.GetCount(); cmdnum++) {
-				if (cmd.FindCommand(cmdnum,str)) {
-					if (str.find('%')==str.length()-1) {
-						str.erase(str.find('%'));
-						int percval=0;
-						std::istringstream stream(str);
-						stream >> percval;
-						if ((percval > 0) && (percval <= 105))
-							CPU_CyclePercUsed = percval;
-					} else if (str=="limit") {
-						cmdnum++;
-						if (cmd.FindCommand(cmdnum,str)) {
-							int cyclimit=0;
-							std::istringstream stream(str);
-							stream >> cyclimit;
-							if (cyclimit>0) CPU_CycleLimit=cyclimit;
+		std::string str;
+		CommandLine cmd(0, p->GetSection()->Get_string("parameters"));
+
+		constexpr auto min_percent = 0;
+		constexpr auto max_percent = 105;
+
+		if (type == "max") {
+			CPU_CycleMax = 0;
+			CPU_CyclePercUsed = 100;
+			CPU_CycleAutoAdjust = true;
+			CPU_CycleLimit = -1;
+			for (unsigned int cmdnum = 1; cmdnum <= cmd.GetCount(); ++cmdnum) {
+				if (cmd.FindCommand(cmdnum, str)) {
+					if (str.back() == '%') {
+						str.pop_back();
+						set_if_in_range(str, CPU_CyclePercUsed, min_percent, max_percent);
+					} else if (str == "limit") {
+						++cmdnum;
+						if (cmd.FindCommand(cmdnum, str)) {
+							set_if_in_range(str, CPU_CycleLimit);
 						}
 					}
 				}
 			}
 		} else {
-			if (type=="auto") {
-				CPU_AutoDetermineMode|=CPU_AUTODETERMINE_CYCLES;
-				CPU_CycleMax=3000;
-				CPU_OldCycleMax=3000;
-				CPU_CyclePercUsed=100;
-				for (Bitu cmdnum=0; cmdnum<=cmd.GetCount(); cmdnum++) {
-					if (cmd.FindCommand(cmdnum,str)) {
-						if (str.find('%')==str.length()-1) {
-							str.erase(str.find('%'));
-							int percval=0;
-							std::istringstream stream(str);
-							stream >> percval;
-							if ((percval > 0) &&
-							    (percval <= 105))
-								CPU_CyclePercUsed = percval;
-						} else if (str=="limit") {
-							cmdnum++;
-							if (cmd.FindCommand(cmdnum,str)) {
-								int cyclimit=0;
-								std::istringstream stream(str);
-								stream >> cyclimit;
-								if (cyclimit>0) CPU_CycleLimit=cyclimit;
+			if (type == "auto") {
+				CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CYCLES;
+				CPU_CycleMax = 3000;
+				CPU_OldCycleMax = 3000;
+				CPU_CyclePercUsed = 100;
+				for (unsigned int cmdnum = 0; cmdnum <= cmd.GetCount(); ++cmdnum) {
+					if (cmd.FindCommand(cmdnum, str)) {
+						if (str.back() == '%') {
+							str.pop_back();
+							set_if_in_range(str, CPU_CyclePercUsed, min_percent, max_percent);
+						} else if (str == "limit") {
+							++cmdnum;
+							if (cmd.FindCommand(cmdnum, str)) {
+								set_if_in_range(str, CPU_CycleLimit);
 							}
 						} else {
-							int rmdval=0;
-							std::istringstream stream(str);
-							stream >> rmdval;
-							if (rmdval>0) {
-								CPU_CycleMax = rmdval;
-								CPU_OldCycleMax = rmdval;
-							}
+							set_if_in_range(str, CPU_CycleMax);
+							set_if_in_range(str, CPU_OldCycleMax);
 						}
 					}
 				}
-			} else if(type =="fixed") {
-				cmd.FindCommand(1,str);
-				int rmdval=0;
-				std::istringstream stream(str);
-				stream >> rmdval;
-				CPU_CycleMax = rmdval;
+			} else if (type == "fixed") {
+				if (cmd.FindCommand(1, str)) {
+					set_if_in_range(str, CPU_CycleMax);
+				}
 			} else {
-				std::istringstream stream(type);
-				int rmdval=0;
-				stream >> rmdval;
-				if (rmdval)
-					CPU_CycleMax = rmdval;
+				set_if_in_range(type, CPU_CycleMax);
 			}
-			CPU_CycleAutoAdjust=false;
+			CPU_CycleAutoAdjust = false;
 		}
 
 		CPU_CycleUp=section->Get_int("cycleup");

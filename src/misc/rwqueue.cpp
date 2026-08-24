@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2021-2021  The DOSBox Staging Team
+ *  Copyright (C) 2021-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -95,5 +95,9 @@ T RWQueue<T>::Dequeue()
 // Explicit template instantiations
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #include <vector>
-template class RWQueue<int>; // Unit tests
-template class RWQueue<std::vector<int16_t>>; // MT-32 and FluidSynth
+// Unit tests
+template class RWQueue<int>;
+template class RWQueue<std::vector<int16_t>>;
+
+// MT-32 and FluidSynth
+template class RWQueue<std::vector<float>>;

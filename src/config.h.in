@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -40,7 +40,9 @@
 #mesondefine MACOSX
 
 // Defined if compiling for Windows (any option)
+#ifndef WIN32
 #mesondefine WIN32
+#endif
 
 /* CPU and FPU emulation
  *
@@ -101,6 +103,9 @@
 // Define to 1 to enable screenshots in .png format
 #mesondefine C_SSHOT
 
+// Define to 1 to enable the Tracy profiling server
+#mesondefine C_TRACY
+
 // Define to 1 to enable internal debugger (using ncurses or pdcurses)
 #mesondefine C_DEBUG
 
@@ -118,6 +123,9 @@
 
 // Compiler supports Core Foundation headers
 #mesondefine C_COREFOUNDATION
+
+// Compiler supports Core Services headers
+#mesondefine C_CORESERVICES
 
 // Define to 1 to enable ALSA MIDI support
 #mesondefine C_ALSA
@@ -203,5 +211,14 @@
 // Enables mathematical constants (such as M_PI) in Windows math.h header
 // https://docs.microsoft.com/en-us/cpp/c-runtime-library/math-constants
 #mesondefine _USE_MATH_DEFINES
+
+/* Loguru-related defines
+ */
+
+// Prevent loguru from parsing command-line arguments with
+// with the hosts's locale-applied, because this can foul up
+// ncurses. (DOSBox also doesn't have foreign-language arguments).
+//
+#define LOGURU_USE_LOCALE 0
 
 #endif

@@ -1,7 +1,7 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@
 #include <unistd.h>
 
 #include "logging.h"
-#include "support.h"
+#include "string_utils.h"
 
 bool path_exists(const char *path) noexcept
 {
@@ -54,7 +54,7 @@ static std::string translate_to_glob_pattern(const std::string &path) noexcept
 		case '?':
 		case '*':
 		case '[':
-		case ']': glob_pattern.push_back('\\'); FALLTHROUGH;
+		case ']': glob_pattern.push_back('\\'); [[fallthrough]];
 		default: glob_pattern.push_back(c); continue;
 		}
 	}

@@ -1,9 +1,9 @@
 /*
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *
+ *  Copyright (C) 2020-2022  The DOSBox Staging Team
  *  Copyright (C) 2012-2021  sergm <sergm@bigmir.net>
  *  Copyright (C) 2020-2021  Nikos Chantziaras <realnc@gmail.com> (settings)
- *  Copyright (C) 2020-2021  The DOSBox Staging Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -49,8 +49,7 @@
 // Synth granularity in frames. We keep four buffers in-flight at any given
 // time: when playback exhausts the "head" buffer, we ask MT-32 to render the
 // next buffer, asynchronously, which is then placed at the back of the queue.
-// These four buffers mean we typically have 2048 frames or ~48 ms in backlog.
-static constexpr int FRAMES_PER_BUFFER = 512;
+static constexpr int FRAMES_PER_BUFFER = 48;
 
 // Analogue circuit modes: DIGITAL_ONLY, COARSE, ACCURATE, OVERSAMPLED
 constexpr auto ANALOG_MODE = MT32Emu::AnalogOutputMode_ACCURATE;
@@ -58,7 +57,7 @@ constexpr auto ANALOG_MODE = MT32Emu::AnalogOutputMode_ACCURATE;
 // DAC Emulation modes: NICE, PURE, GENERATION1, and GENERATION2
 constexpr auto DAC_MODE = MT32Emu::DACInputMode_NICE;
 
-// Analog rendering types: BIT16S, FLOAT
+// Analog rendering types: int16_t, FLOAT
 constexpr auto RENDERING_TYPE = MT32Emu::RendererType_FLOAT;
 
 // Sample rate conversion quality: FASTEST, FAST, GOOD, BEST
@@ -178,7 +177,7 @@ static void init_mt32_dosbox_settings(Section_prop &sec_prop)
 	                        mt32_new_model.GetName(),
 	                        mt32_204_model.GetName(),
 	                        0};
-	auto *str_prop = sec_prop.Add_string("model", when_idle, "auto");
+	auto *str_prop       = sec_prop.Add_string("model", when_idle, "auto");
 	str_prop->Set_values(models);
 	str_prop->Set_help(
 	        "Model of synthesizer to use.\n"
@@ -187,17 +186,39 @@ static void init_mt32_dosbox_settings(Section_prop &sec_prop)
 	        "'mt32_old' and 'mt32_new' are aliases for 1.07 and 2.04, respectively.");
 
 	str_prop = sec_prop.Add_string("romdir", when_idle, "");
-	str_prop->Set_help("The directory containing ROMs for one or more models.\n"
-	                   "The directory can be absolute or relative, or leave it blank to\n"
-	                   "use the 'mt32-roms' directory in your DOSBox configuration\n"
-	                   "directory. Other common system locations will be checked as well.\n"
-	                   "ROM files inside this directory may include any of the following:\n"
-	                   "  - MT32_CONTROL.ROM and MT32_PCM.ROM, for the 'mt32' model.\n"
-	                   "  - CM32L_CONTROL.ROM and CM32L_PCM.ROM, for the 'cm32l' model.\n"
-	                   "  - Unzipped MAME MT-32 and CM-32L ROMs, for the versioned models.");
+	str_prop->Set_help(
+	        "The directory containing ROMs for one or more models.\n"
+	        "The directory can be absolute or relative, or leave it blank to\n"
+	        "use the 'mt32-roms' directory in your DOSBox configuration\n"
+	        "directory. Other common system locations will be checked as well.\n"
+	        "ROM files inside this directory may include any of the following:\n"
+	        "  - MT32_CONTROL.ROM and MT32_PCM.ROM, for the 'mt32' model.\n"
+	        "  - CM32L_CONTROL.ROM and CM32L_PCM.ROM, for the 'cm32l' model.\n"
+	        "  - Unzipped MAME MT-32 and CM-32L ROMs, for the versioned models.");
+
+	str_prop = sec_prop.Add_string("mt32_filter", when_idle, "off");
+	assert(str_prop);
+	str_prop->Set_help(
+	        "Filter for the Roland MT-32/CM-32L audio output:\n"
+	        "  off:       Don't filter the output (default).\n"
+	        "  <custom>:  Custom filter definition; see 'sb_filter' for details.");
 }
 
-#if defined(WIN32)
+static void register_mt32_text_messages()
+{
+	MSG_Add("MT32_NO_SUPPORTED_MODELS", "No supported models present.");
+
+	MSG_Add("MT32_ROM_NOT_LOADED", "No ROM is currently loaded");
+
+	MSG_Add("MT32_INVENTORY_TABLE_MISSING_LETTER", "-");
+	MSG_Add("MT32_INVENTORY_TABLE_AVAILABLE_LETTER", "y");
+
+	// Translators can line up the colons or use different punctuation
+	MSG_Add("MT32_ACTIVE_ROM_LABEL", "Active ROM  : ");
+	MSG_Add("MT32_SOURCE_DIR_LABEL", "Loaded From : ");
+}
+
+#	if defined(WIN32)
 
 static std::deque<std::string> get_rom_dirs()
 {
@@ -293,17 +314,17 @@ static std::set<const LASynthModel *> has_models(const MidiHandler_mt32::service
 	return models;
 }
 
-static std::string load_model(const MidiHandler_mt32::service_t &service,
-                              const std::string &selected_model,
-                              const std::deque<std::string> &rom_dirs)
+static std::optional<model_and_dir_t> load_model(
+        const MidiHandler_mt32::service_t &service,
+        const std::string &selected_model, const std::deque<std::string> &rom_dirs)
 {
 	const bool is_auto = (selected_model == "auto");
 	for (const auto &model : all_models)
 		if (is_auto || model->Matches(selected_model))
 			for (const auto &dir : rom_dirs)
 				if (model->Load(service, dir))
-					return dir;
-	return "";
+					return {{model, simplify_path(dir).string()}};
+	return {};
 }
 
 static mt32emu_report_handler_i get_report_handler_interface()
@@ -363,9 +384,7 @@ static mt32emu_report_handler_i get_report_handler_interface()
 	return REPORT_HANDLER_I;
 }
 
-MidiHandler_mt32::MidiHandler_mt32()
-        : soft_limiter("MT32"),
-          keep_rendering(false)
+MidiHandler_mt32::MidiHandler_mt32() : keep_rendering(false)
 {}
 
 MidiHandler_mt32::service_t MidiHandler_mt32::GetService()
@@ -440,22 +459,16 @@ MIDI_RC MidiHandler_mt32::ListAll(Program *caller)
 	const auto available_models = populate_available_models(GetService(),
 	                                                        dirs_with_models);
 	if (available_models.empty()) {
-		caller->WriteOut("  No supported models present.\n");
+		caller->WriteOut("%s%s\n", indent, MSG_Get("MT32_NO_SUPPORTED_MODELS"));
 		return MIDI_RC::OK;
 	}
 
 	// Text colors and highlight selector
-	constexpr char gray[] = "\033[30;1m";
-	constexpr char green[] = "\033[32;1m";
+	constexpr char gray[]    = "\033[30;1m";
 	constexpr char nocolor[] = "\033[0m";
-	auto get_highlight = [&](bool is_missing, bool is_matching) {
-		return is_missing ? gray : is_matching ? green : nocolor;
-	};
 
-	int num_matches = 0;
-	const std::string selected_model = get_selected_model();
-	auto first_match = [&](const LASynthModel *model) {
-		return model->Matches(selected_model) && !num_matches++;
+	auto get_highlight = [&](bool is_missing) {
+		return is_missing ? gray : nocolor;
 	};
 
 	// Print the header row of all models
@@ -463,17 +476,22 @@ MIDI_RC MidiHandler_mt32::ListAll(Program *caller)
 	caller->WriteOut("%s%s", indent, dirs_padding.c_str());
 	for (const auto &model : models_without_aliases) {
 		const bool is_missing = (available_models.find(model) == available_models.end());
-		const bool is_first_match = !is_missing && first_match(model);
-		const auto color = get_highlight(is_missing, is_first_match);
+		const auto color = get_highlight(is_missing);
 		caller->WriteOut("%s%s%s%s", color, model->GetVersion(),
 		                 nocolor, column_delim);
 	}
 	caller->WriteOut("\n");
 
+	// Get the single-character inventory presence indicators
+	const std::string_view missing_indicator = MSG_Get(
+	        "MT32_INVENTORY_TABLE_MISSING_LETTER");
+	const std::string_view available_indicator = MSG_Get(
+	        "MT32_INVENTORY_TABLE_AVAILABLE_LETTER");
+
 	// Iterate over the found directories and models
-	num_matches = 0;
 	for (const auto &dir_and_models : dirs_with_models) {
-		const std::string &dir = dir_and_models.first;
+		const auto simplified_dir = simplify_path(dir_and_models.first);
+		const std::string &dir = simplified_dir.string();
 		const auto &dir_models = dir_and_models.second;
 
 		// Print the directory, and truncate it if it's too long
@@ -494,13 +512,49 @@ MIDI_RC MidiHandler_mt32::ListAll(Program *caller)
 			assert(textbox.size() > 2);
 			const size_t text_center = (textbox.size() / 2) - 1;
 
-			const bool is_missing = (dir_models.find(model) == dir_models.end());
-			const bool is_first_match = !is_missing && first_match(model);
-			textbox[text_center] = is_missing ? '-' : 'y';
-			const auto color = get_highlight(is_missing, is_first_match);
+			const bool is_missing = (dir_models.find(model) ==
+			                         dir_models.end());
+
+			const auto indicator = is_missing ? missing_indicator
+			                                  : available_indicator;
+
+			const auto max_indicator_width = std::min(
+			        indicator.length(), textbox.length() - text_center);
+
+			textbox.replace(text_center, max_indicator_width, indicator);
+
+			const auto color = get_highlight(is_missing);
 			caller->WriteOut("%s%s%s", color, textbox.c_str(), nocolor);
 		}
 		caller->WriteOut("\n");
+	}
+
+	caller->WriteOut("%s---\n", indent);
+
+	if (model_and_dir && service) {
+		// Print the loaded ROM version
+		mt32emu_rom_info rom_info = {};
+		service->getROMInfo(&rom_info);
+		caller->WriteOut("%s%s%s (%s)\n",
+		                 indent,
+		                 MSG_Get("MT32_ACTIVE_ROM_LABEL"),
+		                 model_and_dir->first->GetName(),
+		                 rom_info.control_rom_description);
+
+		// Print the loaded ROM's directory
+		const std::string_view dir_label = MSG_Get("MT32_SOURCE_DIR_LABEL");
+
+		const auto dir_max_length = INT10_GetTextColumns() -
+		                            (dir_label.length() +
+		                             std::string_view(indent).length());
+
+		const auto truncated_dir = model_and_dir->second.substr(0, dir_max_length);
+		caller->WriteOut("%s%s%s\n",
+		                 indent,
+		                 dir_label.data(),
+		                 truncated_dir.c_str());
+	} else {
+		caller->WriteOut("%s%s\n", indent, MSG_Get("MT32_ROM_NOT_LOADED"));
 	}
 	return MIDI_RC::OK;
 }
@@ -514,8 +568,8 @@ bool MidiHandler_mt32::Open([[maybe_unused]] const char *conf)
 	const auto rom_dirs = get_selected_dirs();
 
 	// Load the selected model and print info about it
-	const auto found_in = load_model(mt32_service, selected_model, rom_dirs);
-	if (found_in.empty()) {
+	auto loaded_model_and_dir = load_model(mt32_service, selected_model, rom_dirs);
+	if (!loaded_model_and_dir) {
 		LOG_MSG("MT32: Failed to find ROMs for model %s in:",
 		        selected_model.c_str());
 		for (const auto &dir : rom_dirs) {
@@ -526,17 +580,35 @@ bool MidiHandler_mt32::Open([[maybe_unused]] const char *conf)
 	}
 	mt32emu_rom_info rom_info;
 	mt32_service->getROMInfo(&rom_info);
+
+	assert(loaded_model_and_dir.has_value());
 	LOG_MSG("MT32: Initialized %s from %s",
-	        rom_info.control_rom_description, found_in.c_str());
+	        rom_info.control_rom_description,
+	        loaded_model_and_dir->second.c_str());
 
 	const auto mixer_callback = std::bind(&MidiHandler_mt32::MixerCallBack,
 	                                      this, std::placeholders::_1);
-	const auto mixer_channel = MIXER_AddChannel(mixer_callback, 0, "MT32");
 
-	// Let the mixer command adjust the MT32's services gain-level
-	const auto set_mixer_level = std::bind(&MidiHandler_mt32::SetMixerLevel,
-	                                       this, std::placeholders::_1);
-	mixer_channel->RegisterLevelCallBack(set_mixer_level);
+	const auto mixer_channel = MIXER_AddChannel(mixer_callback,
+	                                            use_mixer_rate,
+	                                            "MT32",
+	                                            {ChannelFeature::Sleep,
+	                                             ChannelFeature::Stereo,
+	                                             ChannelFeature::Synthesizer});
+
+	const auto section = static_cast<Section_prop *>(control->GetSection("mt32"));
+	assert(section);
+
+	const std::string filter_prefs = section->Get_string("mt32_filter");
+	//
+	if (!mixer_channel->TryParseAndSetCustomFilter(filter_prefs)) {
+		if (filter_prefs != "off")
+			LOG_WARNING("MT32: Invalid 'mt32_filter' value: '%s', using 'off'",
+			            filter_prefs.c_str());
+
+		mixer_channel->SetHighPassFilter(FilterState::Off);
+		mixer_channel->SetLowPassFilter(FilterState::Off);
+	}
 
 	const auto sample_rate = mixer_channel->GetSampleRate();
 
@@ -556,6 +628,7 @@ bool MidiHandler_mt32::Open([[maybe_unused]] const char *conf)
 	}
 	service = std::move(mt32_service);
 	channel = std::move(mixer_channel);
+	model_and_dir = std::move(loaded_model_and_dir);
 
 	// Start rendering audio
 	keep_rendering = true;
@@ -564,40 +637,14 @@ bool MidiHandler_mt32::Open([[maybe_unused]] const char *conf)
 	set_thread_name(renderer, "dosbox:mt32");
 	play_buffer = playable.Dequeue(); // populate the first play buffer
 
-	// Start playback
-	channel->Enable(true);
 	is_open = true;
+
 	return true;
 }
 
 MidiHandler_mt32::~MidiHandler_mt32()
 {
 	Close();
-}
-
-// When the user runs "mixer MT32 <percent-left>:<percent-right>", this function
-// get those percents as floating point ratios (100% being 1.0f). Instead of
-// post-scaling the rendered integer stream in the mixer, we instead provide the
-// desired floating point scalar to the MT32 service via its gain() interface
-// where it can more elegantly adjust the level of the synthesis.
-
-// Another nuance is that MT32's gain interface takes in a single float, but
-// DOSBox's mixer accept left-and-right, so we apply gain using the larger of
-// the two and then use the limiter's left-right ratios to scale down by lesser
-// ratio.
-void MidiHandler_mt32::SetMixerLevel(const AudioFrame &levels) noexcept
-{
-	const float gain = std::max(levels.left, levels.right);
-	{
-		const std::lock_guard<std::mutex> lock(service_mutex);
-		if (service)
-			service->setOutputGain(gain);
-	}
-
-	const AudioFrame desired = {levels.left / gain, levels.right / gain};
-	// mt32emu generates floats between -1 and 1, so we ask the
-	// soft limiter to scale these up to the INT16 range
-	soft_limiter.UpdateLevels(desired, INT16_MAX);
 }
 
 void MidiHandler_mt32::Close()
@@ -626,12 +673,9 @@ void MidiHandler_mt32::Close()
 		service->freeContext();
 	}
 
-	soft_limiter.PrintStats();
-
 	// Reset the members
 	channel.reset();
 	service.reset();
-	soft_limiter.Reset();
 	total_buffers_played = 0;
 	last_played_frame = 0;
 
@@ -647,6 +691,9 @@ uint32_t MidiHandler_mt32::GetMidiEventTimestamp() const
 
 void MidiHandler_mt32::PlayMsg(const uint8_t *msg)
 {
+	assert(channel);
+	channel->WakeUp();
+
 	const auto msg_words = reinterpret_cast<const uint32_t *>(msg);
 	const std::lock_guard<std::mutex> lock(service_mutex);
 	service->playMsgAt(SDL_SwapLE32(*msg_words), GetMidiEventTimestamp());
@@ -654,6 +701,9 @@ void MidiHandler_mt32::PlayMsg(const uint8_t *msg)
 
 void MidiHandler_mt32::PlaySysex(uint8_t *sysex, size_t len)
 {
+	assert(channel);
+	channel->WakeUp();
+
 	assert(len <= UINT32_MAX);
 	const auto msg_len = static_cast<uint32_t>(len);
 	const std::lock_guard<std::mutex> lock(service_mutex);
@@ -669,7 +719,7 @@ void MidiHandler_mt32::MixerCallBack(uint16_t requested_frames)
 		                                          requested_frames);
 		const auto sample_offset_in_buffer = play_buffer.data() +
 		                                     last_played_frame * 2;
-		channel->AddSamples_s16(frames_to_be_played, sample_offset_in_buffer);
+		channel->AddSamples_sfloat(frames_to_be_played, sample_offset_in_buffer);
 		requested_frames -= frames_to_be_played;
 		last_played_frame += frames_to_be_played;
 	}
@@ -697,11 +747,12 @@ void MidiHandler_mt32::Render()
 	// Allocate our buffers once and reuse for the duration.
 	constexpr auto SAMPLES_PER_BUFFER = FRAMES_PER_BUFFER * 2; // L & R
 	std::vector<float> render_buffer(SAMPLES_PER_BUFFER);
-	std::vector<int16_t> playable_buffer(SAMPLES_PER_BUFFER);
+	std::vector<float> playable_buffer(SAMPLES_PER_BUFFER);
 
 	// Populate the backstock using copies of the current buffer.
 	while (backstock.Size() < backstock.MaxCapacity() - 1)
 		backstock.Enqueue(playable_buffer);
+
 	backstock.Enqueue(std::move(playable_buffer));
 	assert(backstock.Size() == backstock.MaxCapacity());
 
@@ -712,7 +763,11 @@ void MidiHandler_mt32::Render()
 		}
 		// Grab the next buffer from backstock and populate it ...
 		playable_buffer = backstock.Dequeue();
-		soft_limiter.Process(render_buffer, FRAMES_PER_BUFFER, playable_buffer);
+
+		// Swap buffers & scale
+		std::swap(render_buffer, playable_buffer);
+		for (auto &s : playable_buffer)
+			s *= INT16_MAX;
 
 		// and then move it into the playable queue
 		playable.Enqueue(std::move(playable_buffer));
@@ -726,8 +781,11 @@ void MT32_AddConfigSection(const config_ptr_t &conf)
 {
 	assert(conf);
 	Section_prop *sec_prop = conf->AddSection_prop("mt32", &mt32_init);
+
 	assert(sec_prop);
 	init_mt32_dosbox_settings(*sec_prop);
+
+	register_mt32_text_messages();
 }
 
 #endif // C_MT32EMU

@@ -2,39 +2,26 @@ name: macOS builds
 
 on: [push, pull_request]
 
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  CCACHE_DIR:      "${{ github.workspace }}/.ccache"
-  CCACHE_MAXSIZE:  "64M"
-  CCACHE_COMPRESS: "true"
-  CLAMDB_DIR:      "/usr/local/Cellar/clamav"
 
 jobs:
   build_macos:
     name: ${{ matrix.conf.name }} (${{ matrix.conf.arch }})
     runs-on: ${{ matrix.conf.host }}
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier,kklobe', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:
         conf:
-          - name: Clang (macos-10.15)
-            host: macos-10.15
-            arch: x86_64
-            needs_deps: true
-            packages: meson
-            build_flags: -Dunit_tests=disabled
-            max_warnings: 0
-
           - name: Clang
-            host: macos-latest
+            host: macos-12
             arch: x86_64
             needs_deps: true
             packages: meson
-            build_flags: -Dunit_tests=disabled
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled -Ddefault_library=shared
+            brew_path: /usr/local/homebrew
             max_warnings: 0
 
           - name: GCC 11
@@ -42,13 +29,16 @@ jobs:
             arch: x86_64
             needs_deps: true
             packages: gcc@11
-            build_flags: -Dunit_tests=disabled --native-file=.github/meson/native-gcc-11.ini
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled --native-file=.github/meson/native-gcc-11.ini
+            brew_path: /usr/local/homebrew
             max_warnings: 0
 
-          - name: Clang, +tests
-            host: macos-latest
+          - name: Clang, +tests (macOS 12)
+            host: macos-12
             arch: x86_64
             needs_deps: true
+            build_flags: -Dbuildtype=debug -Ddefault_library=shared
+            brew_path: /usr/local/homebrew
             run_tests: true
             max_warnings: -1
 
@@ -56,7 +46,8 @@ jobs:
             host: macos-latest
             arch: x86_64
             needs_deps: true
-            build_flags: -Dunit_tests=disabled -Denable_debugger=normal
+            build_flags: -Denable_debugger=normal -Ddefault_library=shared
+            brew_path: /usr/local/homebrew
             max_warnings: 0
 
           - name: Clang
@@ -64,12 +55,25 @@ jobs:
             arch: arm64
             needs_deps: false
             packages: meson
-            build_flags: -Dunit_tests=disabled
+            build_flags: -Dbuildtype=debug -Dunit_tests=disabled -Ddefault_library=shared
+            brew_path: /opt/homebrew
             max_warnings: 0
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      # Let self-hosted runners, which don't need_deps, leverage their own ccache.
+      - name:  Add the ccache environment to GitHub-hosted runners
+        if:    matrix.conf.needs_deps
+        shell: bash
+        run: |
+          set -eu
+          echo 'CCACHE_DIR="${{ github.workspace }}/.ccache"' >> $GITHUB_ENV
+          echo 'CCACHE_MAXSIZE="64M"' >> $GITHUB_ENV
+          echo 'CCACHE_COMPRESS="true"' >> $GITHUB_ENV
 
       - name:  Prepare brew and compiler caches
         if:    matrix.conf.needs_deps
@@ -99,7 +103,7 @@ jobs:
         run: |
           arch -arch=${{ matrix.conf.arch }} brew install \
             ${{ matrix.conf.packages }} \
-            $(cat ./.github/packages/macos-latest-brew.txt)
+            $(cat packages/macos-latest-brew.txt)
 
       - uses:  actions/cache@v2
         if:    matrix.conf.needs_deps
@@ -116,51 +120,72 @@ jobs:
           path: subprojects/packagecache
           key:  subprojects-${{ hashFiles('subprojects/*.wrap') }}
 
-      - name: Log environment
-        run:  arch -arch=${{ matrix.conf.arch }} ./scripts/log-env.sh
-
-      - run:  arch -arch=${{ matrix.conf.arch }} meson setup ${{ matrix.conf.build_flags }} build
-
-      - name: Build
+      - name: Setup and build
         run: |
           set -xo pipefail
-          arch -arch=${{ matrix.conf.arch }} meson compile -C build 2>&1 | tee build.log
+          export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          eval "$(${{ matrix.conf.brew_path }}/bin/brew shellenv)"
+          ./scripts/log-env.sh
+          ./scripts/retry_command.sh 3 meson setup ${{ matrix.conf.build_flags }} build
+          meson compile -C build 2>&1 | tee build.log
 
       - name: Run tests
         if:   matrix.conf.run_tests
-        run:  arch -arch=${{ matrix.conf.arch }} meson test -C build --print-errorlogs
+        run:  meson test -C build --print-errorlogs
 
       - name: Summarize warnings
         if:   matrix.conf.run_tests != true
         env:
           MAX_WARNINGS: ${{ matrix.conf.max_warnings }}
-        run:  arch -arch=${{ matrix.conf.arch }} python3 ./scripts/count-warnings.py -lf build.log
+        run:  python3 ./scripts/count-warnings.py -lf build.log
 
   build_macos_release:
     name: Release build (${{ matrix.runner.arch }})
     runs-on: ${{ matrix.runner.host }}
-    if: github.event_name != 'pull_request' || contains('dreamer,kcgen,ant-222,Wengier,kklobe', github.actor) == false
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     env:
       MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET: ${{ matrix.runner.minimum_deployment }}
 
     strategy:
       matrix:
         runner:
-          - host: macos-10.15
+          # GitHub macOS 11.x CI runner doesn't have working 10.x SDK
+          #- host: macos-latest
+          #  arch: x86_64
+          #  build_flags: --native-file=.github/meson/macos-10.15-deployment-target.ini
+          #  minimum_deployment: '10.15'
+          #  needs_deps: true
+          #  needs_libintl_workaround: true
+
+          - host: [self-hosted, macOS, arm64, release-builds]
             arch: x86_64
-            build_flags: --native-file=.github/meson/macos-10.15-deployment-target.ini
+            build_flags: -Db_lto=true -Db_lto_threads=4 --native-file=.github/meson/macos-arm64-to-x86_64-10.15-deployment-target.ini
+            brew_path: /usr/local/homebrew
             minimum_deployment: '10.15'
-            needs_deps: true
-            needs_libintl_workaround: true
+            needs_deps: false
+            needs_libintl_workaround: false
 
           - host: [self-hosted, macOS, arm64, release-builds]
             arch: arm64
+            brew_path: /opt/homebrew
             minimum_deployment: '11.0'
             needs_deps: false
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
+
+      # Let self-hosted runners, which don't need_deps, leverage their own ccache.
+      - name:  Add the ccache environment to GitHub-hosted runners
+        if:    matrix.runner.needs_deps
+        shell: bash
+        run: |
+          set -eu
+          echo 'CCACHE_DIR="${{ github.workspace }}/.ccache"' >> $GITHUB_ENV
+          echo 'CCACHE_MAXSIZE="64M"' >> $GITHUB_ENV
+          echo 'CCACHE_COMPRESS="true"' >> $GITHUB_ENV
 
       - name:  Prepare brew and compiler caches
         if:    matrix.runner.needs_deps
@@ -188,7 +213,7 @@ jobs:
         if:   matrix.runner.needs_deps
         run: >-
           arch -arch=${{ matrix.runner.arch }} brew install librsvg tree
-          ccache libpng meson opusfile sdl2 sdl2_net
+          ccache libpng meson opusfile sdl2 sdl2_net speexdsp
 
       # Workaround frequent HTTPS-based connectivity issues
       # https://gitlab.freedesktop.org/freedesktop/freedesktop/-/issues/407
@@ -215,91 +240,69 @@ jobs:
         run: |
           set -x
           git fetch --prune --unshallow
-          git fetch --tags --force
-          export VERSION=$(git describe --abbrev=0)
+          export VERSION=$(git describe --abbrev=5)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-      # KLUDGE: Work-around for the scenario where glib's wrap links with libintl 
-      # dynamically, which adds a dependency into a brew dynlib package (in /usr/local/..), 
-      # which some users won't have. So we knockout libintl.dynlib (by removing gettext 
-      # removal), however this also breaks git: so we do a mock-meson setup to fetch all the 
-      # git wraps before knocking it. then we re-add gettext after the build, so git can work 
-      # for subsequent steps.
-      #
-      - name: Fetch subprojects then remove libintl.8.dylib
-        if:   matrix.runner.needs_libintl_workaround
-        run:  |
-          set -ex
-          meson setup -Ddefault_library=static --wrap-mode=forcefallback -Dfluidsynth:try-static-deps=true build
-          git clone --depth 1 --branch "0.2" https://github.com/frida/proxy-libintl.git subprojects/proxy-libintl
-          brew uninstall -f --ignore-dependencies gettext
-          rm -rf build
-
-      - name: Setup release build
-        run: >-
-          arch -arch=${{ matrix.runner.arch }} meson setup
-          ${{ matrix.conf.build_flags }}
-          --wrap-mode=forcefallback
-          -Dbuildtype=release
-          -Db_lto=true
-          -Db_asneeded=true
-          -Ddefault_library=static
-          -Dtry_static_libs=opusfile,sdl2,sdl2_net
-          -Dfluidsynth:try-static-deps=true
-          build
-
-      - name: Build
-        run:  arch -arch=${{ matrix.runner.arch }} ninja -C build
-
-      - name: Reinstate libintl.8.dylib
-        if:   matrix.runner.needs_libintl_workaround
-        run:  brew install gettext
+      - name: Setup and build release
+        run: |
+          set -x
+          eval "$(${{ matrix.runner.brew_path }}/bin/brew shellenv)"
+          meson setup ${{ matrix.runner.build_flags }} -Dwrap_mode=forcefallback -Dtry_static_libs=sdl2,sdl2_net build
+          meson compile -C build
 
       - name: Upload binary
         uses: actions/upload-artifact@v2
         with:
           name: dosbox-${{ matrix.runner.arch }}
           path: build/dosbox
-        
+
+      - name: Upload resources
+        uses: actions/upload-artifact@v2
+        with:
+          name: Resources
+          path: Resources
+
   publish_universal_build:
     name: Publish universal build
     needs: build_macos_release
-    runs-on: macos-10.15
+    runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          submodules: false
 
       - name: Inject version string
         run: |
           set -x
           git fetch --prune --unshallow
-          git fetch --tags --force
-          export VERSION=$(git describe --abbrev=0)
+          export VERSION=$(git describe --abbrev=5)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Install brew depedencies
-        run: brew install librsvg          
+        run: brew install librsvg
 
       - name: Download binaries
         uses: actions/download-artifact@v2
-      
+
       - name: Package
         run: |
+          mv Resources ../
           ./scripts/create-package.sh \
             -p macos \
             -v "${{ env.VERSION }}" \
             -f \
             "$(pwd)" \
             "$(pwd)"
-          
+
       - name: Create dmg
         run: |
           ln -s /Applications dist/
 
-          codesign -s "-" dist/dosbox-staging.app --force --deep -v
-          
+          codesign -s "-" "dist/DOSBox Staging.app" --force --deep -v
+
           hdiutil create \
-              -volname "dosbox-staging" \
+              -volname "DOSBox Staging" \
               -srcfolder dist \
               -ov -format UDZO "dosbox-staging-macOS-${{ env.VERSION }}.dmg"
 
@@ -308,6 +311,7 @@ jobs:
         shell: bash
         run: |
           brew install clamav
+          export CLAMDB_DIR="/usr/local/Cellar/clamav"
           clamscan --heuristic-scan-precedence=yes --recursive --infected dist || true
 
       - name: Upload disk image
@@ -317,7 +321,7 @@ jobs:
         with:
           name: dosbox-staging-macOS-universal
           path: dosbox-staging-macOS-${{ env.VERSION }}.dmg
-    
+
   # This job exists only to publish an artifact with version info when building
   # from main branch, so snapshot build version will be visible on:
   # https://dosbox-staging.github.io/downloads/devel/
@@ -328,12 +332,14 @@ jobs:
     runs-on: macos-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+        with:
+          submodules: false
+
       - name: Generate changelog
         run: |
           set +x
           git fetch --unshallow
-          git fetch --tags --force
           VERSION=$(git describe --abbrev=4)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           NEWEST_TAG=$(git describe --abbrev=0)

@@ -39,6 +39,7 @@
 #include "setup.h"
 #include "string_utils.h"
 #include "timer.h"
+// BOXER-BEGIN: midi-routing
 #include "BXCoalfaceAudio.h"
 
 #define RAWBUF	1024
@@ -78,7 +79,8 @@ MidiHandler Midi_none;
 /* Include different midi drivers, lowest ones get checked first for default.
    Each header provides an independent midi interface. */
 
-// Boxer owns all host MIDI devices and routing.
+// DOSBox MIDI backends are intentionally disabled because Boxer owns all host
+// MIDI devices and routing.
 
 struct Midi {
 	uint8_t status     = 0;
@@ -331,6 +333,7 @@ getdefault:
 		midi.handler = 0;
 	}
 };
+// BOXER-END: midi-routing
 
 void MIDI_ListAll(Program *caller)
 {

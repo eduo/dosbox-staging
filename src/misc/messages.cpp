@@ -157,14 +157,15 @@ static bool LoadMessageFile(const std_fs::path &filename)
 	return true;
 }
 
+// BOXER-BEGIN: localization-routing
 const char *MSG_Get(char const *requested_name)
 {
-	const auto it = messages.find(requested_name);
-	if (it != messages.end()) {
-		return it->second.GetRendered();
-	}
-	return "Message not Found!\n";
+	return boxer_localizedStringForKey(requested_name);
 }
+// BOXER-END: localization-routing
+
+// BOXER-HOOK: upstream-localization-disabled - Boxer deliberately resolves
+// messages through its app bundle instead of the upstream message map.
 
 bool MSG_Exists(const char *requested_name) 
 {
@@ -197,12 +198,6 @@ bool MSG_Write(const char * location) {
 void MSG_Init([[maybe_unused]] Section_prop *section)
 {
 	const auto lang = SETUP_GetLanguage();
-	std::unordered_map<std::string, std::string> boxer_values;
-	if (boxer_localizedStringsForKey(boxer_values, lang.c_str())) {
-		for (const auto &[key, value] : boxer_values)
-			MSG_Replace(key.c_str(), value.c_str());
-		return;
-	}
 
 	// If the language is english, then use the internal message
 	if (lang.empty() || starts_with("en", lang)) {

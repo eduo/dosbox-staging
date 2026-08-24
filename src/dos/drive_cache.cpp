@@ -29,9 +29,9 @@
 #include "string_utils.h"
 #include "support.h"
 
-//--Added 2009-12-26 by Alun Bestor to allow Boxer to hook into DOSBox internals
+// BOXER-HOOK: drive-cache-filter-bridge - Boxer filters host metadata entries
+// before DOS short-name cache generation.
 #include "BXCoalface.h"
-//--End of modifications
 
 int fileInfoCounter = 0;
 
@@ -826,9 +826,9 @@ bool DOS_Drive_Cache::OpenDir(CFileInfo* dir, const char* expand, uint16_t& id) 
 }
 
 void DOS_Drive_Cache::CreateEntry(CFileInfo* dir, const char* name, bool is_directory) {
-    //--Added 2009-12-26 by Alun Bestor to allow Boxer to hide OSX metadata files
+    // BOXER-HOOK: hide-host-metadata - Boxer hides macOS/gamebox metadata from
+    // DOS directory listings and short-name generation.
     if (!boxer_shouldShowFileWithName(name)) return;
-    //--End of modifications
 
 	CFileInfo* info = new CFileInfo;
 	safe_strcpy(info->orgname, name);

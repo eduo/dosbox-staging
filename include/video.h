@@ -23,6 +23,8 @@
 
 #include "types.h"
 
+class Section;
+
 #define REDUCE_JOYSTICK_POLLING
 
 typedef enum {

@@ -39,9 +39,9 @@ Bitu call_shellstop;
  * remove things from the environment */
 DOS_Shell *first_shell = nullptr;
 
-//--Added 2013-09-22 by Alun Bestor to track the currently active shell
+// BOXER-HOOK: active-shell-global - Boxer uses this pointer for command
+// injection and for knowing which DOS shell owns current input.
 DOS_Shell *currentShell = NULL;
-//--End of modifications
 
 static Bitu shellstop_handler()
 {
@@ -484,6 +484,7 @@ void DOS_Shell::RunInternal()
 extern int64_t ticks_at_program_launch; // from shell_cmd
 void DOS_Shell::Run()
 {
+	// BOXER-BEGIN: shell-run-lifecycle
 	boxer_shellWillStart(this);
 	DOS_Shell *previous_shell = currentShell;
 	currentShell = this;
@@ -571,6 +572,7 @@ void DOS_Shell::Run()
 	         boxer_shellShouldContinue(this));
 	currentShell = previous_shell;
 	boxer_shellDidFinish(this);
+	// BOXER-END: shell-run-lifecycle
 }
 
 void DOS_Shell::SyntaxError()

@@ -40,6 +40,13 @@
 #include "parport.h"
 //--End of modifications
 //--Added 2021-02-10 by C.W. Betts to allow using our custom MT-32 emulation
+// BOXER-HOOK: boxer-mt32-config-include
+// BOXER-HOOK: dosbox-parport-init
+// BOXER-HOOK: mt32-device-value
+// BOXER-HOOK: mt32-help-unconditional
+// BOXER-HOOK: mt32-midiconfig-help
+// BOXER-HOOK: mt32-config-section
+// BOXER-HOOK: parallel-config-section
 #include "BXMIDIConfig.hpp"
 //--End of modifications
 #include "hardware.h"
@@ -151,9 +158,9 @@ void Null_Init([[maybe_unused]] Section *sec) {
 static Bitu Normal_Loop() {
 	Bits ret;
 	while (1) {
-		//--Added 2009-12-27 by Alun Bestor to short-circuit the emulation loop when we need to
+		// BOXER-HOOK: runloop-termination - Boxer can stop emulation from
+		// Cocoa-side lifecycle events without waiting for DOSBox shutdown.
 		if (!boxer_runLoopShouldContinue()) return 1;
-		//--End of modifications
 
 		if (PIC_RunQueue()) {
 			ret = (*cpudecoder)();
@@ -170,9 +177,9 @@ static Bitu Normal_Loop() {
 			if (!GFX_Events()) {
 				return 0;
 			}
-			//--Check again at this point in case our own events have cancelled the emulation.
+			// BOXER-HOOK: runloop-event-cancellation - Boxer event processing
+			// can request shutdown while DOSBox is idle between PIC ticks.
 			if (!boxer_runLoopShouldContinue()) return 1;
-			//--End of modifications
 			if (ticksRemain > 0) {
 				TIMER_AddTick();
 				ticksRemain--;
@@ -324,14 +331,18 @@ void DOSBOX_RunMachine()
 {
 	Bitu ret = 0;
 	while (ret == 0 && !shutdown_requested) {
-        //--Modified 2011-09-25 by Alun Bestor to bracket iterations of the run loop
-        //with our own callbacks. We pass along the contextInfo parameter so that
-        //Boxer knows which iteration of the runloop is running (in case of nested runloops).
+        // BOXER-BEGIN: runloop-context
+        // Reason: Boxer needs Objective-C-side setup/teardown around each DOSBox
+        // machine-loop iteration and must distinguish nested run loops.
+        // Preserve: Pair boxer_runLoopWillStartWithContextInfo and
+        // boxer_runLoopDidFinishWithContextInfo around the loop invocation.
+        // Upstream risk: A plain upstream loop loses Boxer's nested-runloop
+        // bookkeeping and can leave app lifecycle state unbalanced.
         void *contextInfo;
         boxer_runLoopWillStartWithContextInfo(&contextInfo);
 		ret=(*loop)();
         boxer_runLoopDidFinishWithContextInfo(contextInfo);
-        //--End of modifications.
+        // BOXER-END: runloop-context
 	};
 }
 

@@ -28,10 +28,10 @@
 
 #include "setup.h"
 #include "cpu.h"
-//--Modified 2009-02-26 by Alun Bestor: Incorrect folder path that wont work in XCode project
+// BOXER-HOOK: xcode-lazyflags-include - Boxer builds DOSBox inside Xcode where
+// the upstream relative include path for lazyflags.h is not valid.
 //#include "../src/cpu/lazyflags.h"
 #include "../cpu/lazyflags.h"
-//--End of modifications
 
 #include "callback.h"
 

@@ -276,7 +276,8 @@ public:
         
 		// iterate through all 3 lpt ports
 		for (Bitu i = 0; i < 3; i++) {
-            //--Modified 2012-02-10 by Alun Bestor: if a parallel port is already occupied
+            // BOXER-HOOK: parport-skip-occupied-lpt - Do not replace a port
+            // already owned by another emulated device.
             //by another device (e.g. disney sound source on LPT1), skip it
             Bitu biosAddress;
             switch(i)

@@ -68,7 +68,7 @@ void Add_VFiles(const bool add_autoexec)
 	PROGRAMS_MakeFile("CHOICE.COM", ProgramCreate<CHOICE>);
 	PROGRAMS_MakeFile("HELP.COM", ProgramCreate<HELP>);
 	PROGRAMS_MakeFile("IMGMOUNT.COM", ProgramCreate<IMGMOUNT>);
-	//--Disabled 2012-01-06 by Alun Bestor: Boxer no longer uses the INTRO command.
+	// BOXER-HOOK: hide-intro-command - Boxer provides its own onboarding.
 	//PROGRAMS_MakeFile("INTRO.COM", ProgramCreate<INTRO>);
 	//--End of modifications
 	PROGRAMS_MakeFile("KEYB.COM", ProgramCreate<KEYB>);

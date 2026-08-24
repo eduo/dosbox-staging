@@ -22,6 +22,10 @@
 #include "config.h"
 #include "compiler.h"
 #include "types.h"
+class Section;
+// BOXER-BEGIN: coalface-remaps
+#include "BXCoalface.h"
+// BOXER-END: coalface-remaps
 
 #include <memory>
 
@@ -40,7 +44,6 @@ void MSG_Add(const char*,const char*); //add messages to the internal languagefi
 const char* MSG_Get(char const *);     //get messages from the internal languagefile
 bool MSG_Exists(const char*);
 
-class Section;
 
 typedef Bitu (LoopHandler)(void);
 

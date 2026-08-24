@@ -177,6 +177,7 @@ void DOS_Shell::DoCommand(char * line) {
 	*cmd_write=0;
 	if (is_empty(cmd_buffer))
 		return;
+	// BOXER-HOOK: shell-command-filter
 	if (!boxer_shellShouldRunCommand(this, cmd_buffer, line))
 		return;
 	/* Check the internal list */
@@ -204,7 +205,7 @@ bool DOS_Shell::WriteHelp(const std::string &command, char *args) {
 }
 
 #define HELP(command) if (WriteHelp((command), args)) return
-//--Added 2009-02-23 by Alun Bestor to allow commands that expect arguments to display their help text when no arguments were provided
+// BOXER-BEGIN: shell-command-ux
 #define HELP_IF_NO_ARGS(command) \
 	if (ScanCMDBool(args,"?") || !strlen(args)) { \
 		WriteOut(MSG_Get("SHELL_CMD_" command "_HELP")); \
@@ -214,7 +215,7 @@ bool DOS_Shell::WriteHelp(const std::string &command, char *args) {
 		else WriteOut(command "\n"); \
 		return; \
 	}
-//--End of modifications
+// BOXER-END: shell-command-ux
 
 void DOS_Shell::CMD_CLS(char *args)
 {
@@ -234,6 +235,8 @@ void DOS_Shell::CMD_CLS(char *args)
 }
 
 void DOS_Shell::CMD_DELETE(char * args) {
+	// BOXER-HOOK: delete-help-if-no-args
+	// BOXER-HOOK: delete-unix-path-tolerance
 	HELP("DELETE");
 	/* Command uses dta so set it to our internal dta */
 	RealPt save_dta=dos.dta();
@@ -364,6 +367,7 @@ void DOS_Shell::CMD_HELP(char * args){
 }
 
 void DOS_Shell::CMD_RENAME(char * args){
+	// BOXER-HOOK: rename-help-if-no-args
 	HELP("RENAME");
 	StripSpaces(args);
 	if (!*args) {SyntaxError();return;}
@@ -508,14 +512,15 @@ void DOS_Shell::CMD_CHDIR(char * args) {
 }
 
 void DOS_Shell::CMD_MKDIR(char * args) {
-	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
+	// BOXER-HOOK: mkdir-help-if-no-args - Boxer shows command help instead of
+	// a terse syntax error when MKDIR has no target.
 	//HELP("MKDIR");
 	HELP_IF_NO_ARGS("MKDIR");
-	//--End of modifications
 	
 	StripSpaces(args);
 	
-	//--Disabled 2009-02-24 by Alun Bestor: bailing out upon encountering unrecognised switches was preventing the use of unix/style/paths
+	// BOXER-HOOK: mkdir-unix-path-tolerance - Boxer allows slash-heavy host
+	// paths to pass through MKDIR parsing.
 	/*
 	char * rem=ScanCMDRemain(args);
 	if (rem) {
@@ -523,7 +528,6 @@ void DOS_Shell::CMD_MKDIR(char * args) {
 		return;
 	}
 	*/
-	//--End of modifications
 	
 	if (!DOS_MakeDir(args)) {
 		WriteOut(MSG_Get("SHELL_CMD_MKDIR_ERROR"),args);
@@ -531,14 +535,15 @@ void DOS_Shell::CMD_MKDIR(char * args) {
 }
 
 void DOS_Shell::CMD_RMDIR(char * args) {
-	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
+	// BOXER-HOOK: rmdir-help-if-no-args - Boxer shows command help instead of
+	// a terse syntax error when RMDIR has no target.
 	//HELP("RMDIR");
 	HELP_IF_NO_ARGS("RMDIR");
-	//--End of modifications
 	
 	StripSpaces(args);
 	
-	//--Disabled 2009-02-24 by Alun Bestor: bailing out upon encountering unrecognised switches was preventing the use of unix/style/paths
+	// BOXER-HOOK: rmdir-unix-path-tolerance - Boxer allows slash-heavy host
+	// paths to pass through RMDIR parsing.
 	/*
 	char * rem=ScanCMDRemain(args);
 	if (rem) {
@@ -546,7 +551,6 @@ void DOS_Shell::CMD_RMDIR(char * args) {
 		return;
 	}
 	*/
-	//--End of modifications
 	
 	if (!DOS_RemoveDir(args)) {
 		WriteOut(MSG_Get("SHELL_CMD_RMDIR_ERROR"),args);
@@ -626,9 +630,9 @@ static std::string to_search_pattern(const char *arg)
 	case '\0': // No arguments, search for all.
 		pattern = "*.*";
 		break;
-	//--Added 2009-02-24 by Alun Bestor to support /Unix/delimited/paths
+	// BOXER-HOOK: dir-unix-path-trailing-slash - Boxer accepts slash-delimited
+	// host paths when expanding DIR search patterns.
 	case '/':
-	//--End of modifications
 		
 	case '\\': // Handle \, C:\, etc.
 	case ':':  // Handle C:, etc.
@@ -796,6 +800,7 @@ char *format_time(const uint8_t hour,
 }
 
 void DOS_Shell::CMD_DIR(char * args) {
+	// BOXER-HOOK: dir-unix-path-tolerance
 	HELP("DIR");
 
 	std::string line;
@@ -1146,10 +1151,10 @@ struct copysource {
 };
 
 void DOS_Shell::CMD_COPY(char * args) {
-	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
+	// BOXER-HOOK: copy-help-if-no-args - Boxer shows command help instead of
+	// a terse syntax error when COPY has no source.
 	//HELP("COPY");
 	HELP_IF_NO_ARGS("COPY");
-	//--End of modifications
 	
 	static char defaulttarget[] = ".";
 	StripSpaces(args);
@@ -1169,7 +1174,8 @@ void DOS_Shell::CMD_COPY(char * args) {
 	(void)ScanCMDBool(args, "-Y");
 	(void)ScanCMDBool(args, "V");
 
-	//--Disabled 2009-02-24 by Alun Bestor: bailing out upon encountering unrecognised switches was preventing the use of unix/style/paths
+	// BOXER-HOOK: copy-unix-path-tolerance - Boxer allows slash-heavy host
+	// paths to pass through COPY parsing.
 	/*
 	char * rem=ScanCMDRemain(args);
 	if (rem) {
@@ -1178,7 +1184,6 @@ void DOS_Shell::CMD_COPY(char * args) {
 		return;
 	}
 	 */
-	//--End of modifications
 	
 	// Gather all sources (extension to copy more then 1 file specified at command line)
 	// Concatenating files go as follows: All parts except for the last bear the concat flag.
@@ -1609,10 +1614,10 @@ void DOS_Shell::CMD_SET(char * args) {
 }
 
 void DOS_Shell::CMD_IF(char * args) {
-	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
+	// BOXER-HOOK: if-help-if-no-args - Boxer shows command help instead of a
+	// terse syntax error when IF has no condition.
 	//HELP("IF");
 	HELP_IF_NO_ARGS("IF");
-	//--End of modifications
 	
 	StripSpaces(args,'=');
 	bool has_not=false;
@@ -1729,6 +1734,7 @@ void DOS_Shell::CMD_SHIFT(char * args ) {
 }
 
 void DOS_Shell::CMD_TYPE(char * args) {
+	// BOXER-HOOK: type-help-if-no-args
 	HELP("TYPE");
 	StripSpaces(args);
 	if (!*args) {
@@ -1770,10 +1776,10 @@ void DOS_Shell::CMD_PAUSE(char *args) {
 }
 
 void DOS_Shell::CMD_CALL(char * args){
-	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
+	// BOXER-HOOK: call-help-if-no-args - Boxer shows command help instead of a
+	// terse syntax error when CALL has no target.
 	//HELP("CALL");
 	HELP_IF_NO_ARGS("CALL");
-	//--End of modifications
 	
 	this->call=true; /* else the old batchfile will be closed first */
 	this->ParseLine(args);
@@ -1947,6 +1953,7 @@ void DOS_Shell::CMD_TIME(char * args) {
 }
 
 void DOS_Shell::CMD_SUBST (char * args) {
+	// BOXER-HOOK: subst-help-if-no-args
 /* If more that one type can be substed think of something else
  * E.g. make basedir member dos_drive instead of localdrive
  */
@@ -2021,6 +2028,8 @@ void DOS_Shell::CMD_SUBST (char * args) {
 }
 
 void DOS_Shell::CMD_LOADHIGH(char *args){
+	// BOXER-HOOK: loadhigh-help-if-no-args
+	// BOXER-HOOK: loadhigh-unix-path-tolerance
 	//--Modified 2009-02-24 by Alun Bestor to show help text when no arguments were given
 	//HELP("LOADHIGH");
 	HELP_IF_NO_ARGS("LOADHIGH");

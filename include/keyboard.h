@@ -136,6 +136,7 @@ enum KBD_KEYS {
 };
 
 // Boxer exposes this enum through Objective-C++ bridge headers.
+// BOXER-HOOK: keyboard-enum-c-compat
 typedef enum KBD_KEYS KBD_KEYS;
 
 void KEYBOARD_ClrBuffer(void);

@@ -159,6 +159,7 @@ static void add_key(uint16_t code) {
 
 static bool get_key(uint16_t &code) {
 	//--Added 2012-04-15 to let Boxer insert its own keys
+	// BOXER-HOOK: bios-key-paste-pop
 	if (boxer_getNextKeyCodeInPasteBuffer(&code, true))
 		return true;
 	//--End of modifications
@@ -185,6 +186,7 @@ static bool get_key(uint16_t &code) {
 
 static bool check_key(uint16_t &code) {
 	//--Added 2012-04-15 to let Boxer insert its own keys
+	// BOXER-HOOK: bios-key-paste-peek
 	if (boxer_getNextKeyCodeInPasteBuffer(&code, false))
 		return true;
 	//--End of modifications
@@ -308,9 +310,9 @@ static Bitu IRQ1_Handler(void) {
 		}
 		break;
 	case 0x3a:flags2 |=0x40;break;//CAPSLOCK
-		//--Modified 2011-03-13 by Alun Bestor to let Boxer sniff the state of lock keys.
+		// BOXER-HOOK: caps-lock-state - Boxer mirrors DOS lock-key state into
+		// the macOS-facing keyboard model.
 	case 0xba:flags1 ^=0x40;flags2 &=~0x40;leds ^=0x04;boxer_setCapsLockActive(flags1 & 0x40);break;
-		//--End of modifications
 	case 0x45:
 		if (flags3 &0x01) {
 			/* last scancode of pause received; first remove 0xe1-prefix */
@@ -342,12 +344,14 @@ static Bitu IRQ1_Handler(void) {
 			flags1^=0x20;
 			leds^=0x02;
 			flags2&=~0x20;
-			//--Added 2011-03-13 by Alun Bestor to let Boxer sniff the state of lock keys.
+			// BOXER-HOOK: num-lock-state - Boxer mirrors DOS lock-key state
+			// into the macOS-facing keyboard model.
 			boxer_setNumLockActive(flags1 & 0x20);
-			//--End of modifications
 		}
 		break;
 	case 0x46:flags2 |=0x10;break;				/* Scroll Lock SDL Seems to do this one fine (so break and make codes) */
+	// BOXER-HOOK: scroll-lock-state - Boxer mirrors DOS lock-key state into
+	// the macOS-facing keyboard model.
 	case 0xc6:flags1 ^=0x10;flags2 &=~0x10;leds ^=0x01;boxer_setScrollLockActive(flags1 & 0x10);break;
 //	case 0x52:flags2|=128;break;//See numpad					/* Insert */
 	case 0xd2:	
@@ -486,6 +490,7 @@ static Bitu INT16_Handler(void) {
 	uint16_t temp=0;
 	
 	//--Added 2012-08-19 by Alun Bestor to let Boxer interrupt keyboard listening loops
+	// BOXER-HOOK: int16-cancel
 	if (!boxer_continueListeningForKeyEvents())
 	{
 		return CBRET_STOP;
@@ -658,4 +663,3 @@ void BIOS_SetupKeyboard(void) {
 		//	iret
 	}
 }
-

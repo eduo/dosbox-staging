@@ -186,16 +186,16 @@ DOS_Drive::DOS_Drive()
 {
 	curdir[0] = '\0';
 	info[0] = '\0';
-	//--Added 2009-10-25 by Alun Bestor to record the base system path for a drive
+	// BOXER-HOOK: initialize-drive-system-path - Boxer relies on DOS_Drive
+	// system paths starting empty before subclasses set backing host paths.
 	systempath[0]=0;
-	//--End of modifications
 }
 
-//--Added 2009-10-25 by Alun Bestor to retrieve the base system path for a drive
+// BOXER-HOOK: retrieve-drive-system-path - Boxer queries DOS drive backing
+// paths for gamebox/file-management integration.
 char * DOS_Drive::getSystemPath(void) {
 	return systempath;
 }
-//--End of modifications
 
 void DOS_Drive::SetDir(const char *path)
 {

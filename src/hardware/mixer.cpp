@@ -53,7 +53,8 @@
 #include "math_utils.h"
 #include "mem.h"
 #include "midi.h"
-#include "BXCoalfaceAudio.h"
+// BOXER-BEGIN: mixer-volume-bridge
+#import "BXCoalfaceAudio.h"
 #include "mixer.h"
 #include "pic.h"
 #include "programs.h"
@@ -2363,9 +2364,12 @@ private:
 		MIXER_LockAudioDevice();
 
 		constexpr auto master_channel_string = "[color=cyan]MASTER[reset]";
+		const AudioFrame boxer_master_volume = {
+		        boxer_masterVolume(BXLeftChannel),
+		        boxer_masterVolume(BXRightChannel)};
 
 		show_channel(convert_ansi_markup(master_channel_string),
-		             mixer.master_volume,
+		             boxer_master_volume,
 		             MSG_Get("SHELL_CMD_MIXER_CHANNEL_STEREO"),
 		             none_value,
 		             none_value,
@@ -2534,6 +2538,7 @@ void boxer_updateVolumes()
 	}
 	MIXER_UnlockAudioDevice();
 }
+// BOXER-END: mixer-volume-bridge
 
 void MIXER_Init(Section *sec)
 {

@@ -52,9 +52,9 @@ enum JoystickType {
 	JOY_CH = 1 << 9,
 };
 
-//--Added 2011-05-08 by Alun Bestor to let Boxer set and retrieve the gameport timing mode.
+// BOXER-HOOK: gameport-timing-export - Boxer toggles DOS gameport timing at
+// runtime through this exported state.
 extern bool gameport_timed;
-//--End of modifications
 extern JoystickType joytype;
 extern bool button_wrapping_enabled;
 

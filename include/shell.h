@@ -43,9 +43,9 @@ class DOS_Shell;
 extern DOS_Shell * first_shell;
 
 
-//--Added 2013-09-22 by Alun Bestor to let Boxer talk to the currently active shell
+// BOXER-HOOK: current-shell-export - Boxer needs the active DOS shell pointer
+// for command injection and shell lifecycle tracking.
 extern DOS_Shell * currentShell;
-//--End of modifications
 
 class BatchFile {
 public:
@@ -115,7 +115,7 @@ public:
 
 	//--Added 2013-09-22 by C.W. Betts to let Boxer know that there are no more batch files
 	bool hasNoBatchFiles() const {
-		return batchfiles.empty();
+		return !bf;
 	}
 	//--End of modifications
 

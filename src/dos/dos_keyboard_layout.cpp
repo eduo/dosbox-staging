@@ -1172,9 +1172,9 @@ const char *KeyboardLayout::GetMainLanguageCode()
 
 //--Added 2012-02-25 by Alun Bestor to support limited on-the-fly layout switching
 bool KeyboardLayout::supports_language_code(const char *code) {
-	Bitu code_len = strlen(code);
-	for (auto iterator = language_codes.cbegin(); iterator != language_codes.cend(); iterator++) {
-		if (!strncasecmp(code,iterator->data(),code_len)) {
+	const auto code_len = strlen(code);
+	for (size_t i = 0; i < language_code_count; ++i) {
+		if (!strncasecmp(code, language_codes[i], code_len)) {
 			return true;
 		}
 	}
@@ -1254,7 +1254,10 @@ const char* DOS_GetLoadedLayout(void) {
 	return nullptr;
 }
 
-//--Added 2012-02-24 by Alun Bestor to let Boxer check if any layout has been loaded.
+// BOXER-HOOK: keyboard-layout-switching-api
+// BOXER-HOOK: keyboard-cpi-buffer-storage
+// BOXER-HOOK: keyboard-layout-state-methods
+// BOXER-BEGIN: keyboard-layout-bridge
 const char * boxer_keyboardLayoutName()
 {
 	if (loaded_layout)
@@ -1300,7 +1303,7 @@ void boxer_setKeyboardLayoutActive(bool active)
 			loaded_layout->SwitchForeignLayout();
 	}
 }
-//--End of modifications
+// BOXER-END: keyboard-layout-bridge
 
 static const std::map<std::string, Country> country_code_map{
         // clang-format off
@@ -1741,6 +1744,12 @@ public:
 		loaded_layout = std::make_unique<KeyboardLayout>();
 
 		const char * layoutname=section->Get_string("keyboardlayout");
+		// BOXER-HOOK: macos-preferred-keyboard-layout - Resolve the auto
+		// setting through Boxer's current macOS keyboard layout.
+		if (!strncmp(layoutname, "auto", 4)) {
+			if (const char *preferred_layout = boxer_preferredKeyboardLayout())
+				layoutname = preferred_layout;
+		}
 
 		// If the use only provided a single value (language), then try using it
 		const auto layout_is_one_value = sv(layoutname).find(' ') == std::string::npos;
@@ -1764,6 +1773,11 @@ public:
 				LOG_MSG("LAYOUT: DOS keyboard layout loaded with main language code %s for layout %s",lcode,layoutname);
 			}
 		}
+		// BOXER-HOOK: us-layout-remap-fix - US layouts must not leave foreign
+		// key remapping active.
+		if (loaded_layout->is_US_layout() &&
+		    loaded_layout->foreign_layout_active())
+			loaded_layout->SwitchForeignLayout();
 	}
 
 	~DOS_KeyboardLayout(){

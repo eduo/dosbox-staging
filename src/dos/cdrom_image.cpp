@@ -532,6 +532,7 @@ bool CDROM_Interface_Image::SetDevice(const char* path, [[maybe_unused]] const i
 		//--Disabled 2012-11-07 by Alun Bestor: this is already covered by our own error messages.
 		/*
 		char buf[MAX_LINE_LENGTH];
+		// BOXER-HOOK: suppress-cdrom-image-error-text
 		snprintf(buf, MAX_LINE_LENGTH, "Could not load image file: %s\r\n", path);
 		uint16_t size = (uint16_t)strlen(buf);
 		DOS_WriteFile(STDOUT, (uint8_t*)buf, &size);

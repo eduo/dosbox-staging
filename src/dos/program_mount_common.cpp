@@ -62,9 +62,9 @@ const char *UnmountHelper(char umount)
 		imageDiskList[i_drive].reset();
 	}
 
-	//--Added 2010-01-18 by Alun Bestor: let Boxer know that the drive state has changed
+	// BOXER-HOOK: drive-unmounted - Boxer refreshes gamebox/UI drive state
+	// after DOSBox unmounts a drive.
 	boxer_driveDidUnmount(i_drive);
-	//--End of modifications
 
 	return MSG_Get("PROGRAM_MOUNT_UMOUNT_SUCCESS");
 }

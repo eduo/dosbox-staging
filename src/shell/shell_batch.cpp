@@ -25,9 +25,8 @@
 #include "logging.h"
 #include "string_utils.h"
 
-//--Added 2013-09-22 by Alun Bestor to let Boxer track batch files
+// BOXER-HOOK: batch-lifecycle-bridge
 #include "BXCoalface.h"
-//--End of modifications
 // Permitted ASCII control characters in batch files
 constexpr uint8_t BACKSPACE = 8;
 constexpr uint8_t CARRIAGE_RETURN = '\r';
@@ -68,6 +67,8 @@ BatchFile::~BatchFile() {
 	assert(shell);
 	shell->bf = prev;
 	shell->echo = echo;
+	// BOXER-HOOK: batch-file-ended
+	boxer_shellDidEndBatchFile(shell, filename.c_str());
 }
 
 // TODO: Refactor this sprawling function into smaller ones without GOTOs

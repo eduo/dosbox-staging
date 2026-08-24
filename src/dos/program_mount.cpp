@@ -400,9 +400,9 @@ void MOUNT::Run(void) {
 		label = drive; label += "_FLOPPY";
 		newdrive->dirCache.SetLabel(label.c_str(),iscdrom,true);
 	}
-	//--Added 2010-01-18 by Alun Bestor: let Boxer know that the drive state has changed
+	// BOXER-HOOK: mount-drive-mounted - Boxer refreshes gamebox/UI drive state
+	// after MOUNT changes DOSBox drive mappings.
 	boxer_driveDidMount(drive-'A');
-	//--End of modifications
 	if (type == "floppy") incrementFDD();
 	return;
 showusage:

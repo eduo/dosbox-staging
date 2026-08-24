@@ -317,7 +317,9 @@ static Bitu DOS_21Handler(void) {
 		}
 		break;
 	case 0x05:		/* Write Character to PRINTER */
-        //--Added 2012-09-11 by Alun Bestor for printer emulation 
+        // BOXER-HOOK: int21-printer-output - DOS INT 21h printer output is
+        // routed through the parallel-port objects so Boxer printer emulation
+        // receives application print data.
         {
             for(int i = 0; i < 3; i++) {
                 // look up a parallel port
@@ -328,7 +330,6 @@ static Bitu DOS_21Handler(void) {
             }
             break;
         }
-        //--End of modifications
 	case 0x06:		/* Direct Console Output / Input */
 		switch (reg_dl) {
 		case 0xFF:	/* Input */
@@ -1554,7 +1555,12 @@ public:
 		}
 	}
 	~DOS(){
-		for (uint16_t i = 0; i < DOS_DRIVES; i++)	delete Drives[i];
+		// BOXER-HOOK: shutdown-drive-clear - Release and clear every mounted
+		// drive so a later session cannot observe stale gamebox media.
+		for (uint16_t i = 0; i < DOS_DRIVES; i++) {
+			delete Drives[i];
+			Drives[i] = nullptr;
+		}
 		// de-init devices, this allows DOSBox to cleanly re-initialize
 		// without throwing an inevitable `DOS: Too many devices added`
 		// exception

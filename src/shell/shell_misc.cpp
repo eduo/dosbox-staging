@@ -61,6 +61,8 @@ static void move_cursor_back_one() {
 	}
 }
 
+// BOXER-BEGIN: shell-input-injection
+// BOXER-HOOK: shell-misc-bridge
 void DOS_Shell::InputCommand(char * line) {
 	Bitu size=CMD_MAXLINE-2; //lastcharacter+0
 	uint8_t c;uint16_t n=1;
@@ -437,6 +439,7 @@ void DOS_Shell::InputCommand(char * line) {
 	if (dos->Get_bool("expand_shell_variable"))
 		ProcessCmdLineEnvVarStitution(line);
 }
+// BOXER-END: shell-input-injection
 
 /* Note: Buffer pointed to by "line" must be at least CMD_MAXLINE+1 bytes long! */
 void DOS_Shell::ProcessCmdLineEnvVarStitution(char* line) {
@@ -540,6 +543,9 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		if (!extension)
 			return false;
 	}
+	// BOXER-BEGIN: program-launch-lifecycle
+	char canonical_path[DOS_PATHLENGTH + 4] = {};
+	DOS_Canonicalize(fullname, canonical_path);
 
 	if (strcasecmp(extension, ".bat") == 0) 
 	{	/* Run the .bat file */
@@ -547,6 +553,7 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		bool temp_echo=echo; /*keep the current echostate (as delete bf might change it )*/
 		if (bf && !call)
 			bf.reset();
+		boxer_shellWillBeginBatchFile(this, canonical_path, args);
 		bf = std::make_shared<BatchFile>(this, fullname, name, line);
 		echo = temp_echo; // restore it.
 	} 
@@ -556,6 +563,7 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		{
 			if(strcasecmp(extension, ".exe") !=0) return false;
 		}
+		boxer_shellWillExecuteFileAtDOSPath(this, canonical_path, args);
 		/* Run the .exe or .com file from the shell */
 		/* Allocate some stack space for tables in physical memory */
 		reg_sp-=0x200;
@@ -658,7 +666,9 @@ bool DOS_Shell::Execute(char * name,char * args) {
 		reg_eip=oldeip;
 		SegSet16(cs,oldcs);
 #endif
+		boxer_shellDidExecuteFileAtDOSPath(this, canonical_path);
 	}
+	// BOXER-END: program-launch-lifecycle
 	return true; //Executable started
 }
 

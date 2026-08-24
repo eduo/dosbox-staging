@@ -179,14 +179,14 @@ static bool write_active = false;
 static bool swap34 = false;
 bool button_wrapping_enabled = true;
 
-//--Modified 2011-05-08 by Alun Bestor to let Boxer set and retrieve the gameport timing programmatically.
+// BOXER-HOOK: gameport-timing-state - Boxer can toggle DOS gameport timing
+// from its controller UI without rebuilding DOSBox joystick configuration.
 bool gameport_timed = true;
-//--End of modifications
 
-//--Removed 2011-04-26 by Alun Bestor: Boxer no longer includes sdl_mapper.cpp
+// BOXER-HOOK: mapper-free-autofire - Boxer does not include DOSBox's SDL
+// mapper, so autofire remains owned by the joystick module.
 //extern bool autofire; //sdl_mapper.cpp
 bool autofire;
-//--End of modifications
 
 static uint8_t read_p201(io_port_t, io_width_t)
 {
@@ -319,7 +319,7 @@ static void write_p201_timed(io_port_t, io_val_t, io_width_t)
 	}
 }
 
-//--Modified 2011-05-08 by Alun Bestor to let Boxer toggle the gameport timing on the fly.
+// BOXER-BEGIN: gameport-poll-activation
 static Bitu read_p201_switchable(io_port_t port,io_width_t iolen) {
 	boxer_setJoystickActive(true);
 	if (gameport_timed && !write_active) return read_p201_timed(port, iolen);
@@ -331,7 +331,7 @@ static void write_p201_switchable(io_port_t port,io_val_t val,io_width_t iolen) 
 	if (gameport_timed) write_p201_timed(port, val, iolen);
 	else write_p201(port, val, iolen);
 }
-//--End of modifications
+// BOXER-END: gameport-poll-activation
 
 void JOYSTICK_Enable(uint8_t which, bool enabled)
 {
@@ -584,11 +584,20 @@ public:
 
 		// Get the [joystock] conf section
 		const auto section = static_cast<Section_prop *>(configuration);
-		//--Modified 2011-05-08 by Alun Bestor to let Boxer set and retrieve the gameport timing mode.
+		// BOXER-HOOK: gameport-timing-config - Boxer keeps gameport timing
+		// mutable and installs switchable handlers for port 0x201.
 		gameport_timed = section->Get_bool("timed");
-		ReadHandler.Install(0x201,read_p201_switchable,io_width_t::byte);
-		WriteHandler.Install(0x201,write_p201_switchable,io_width_t::byte);
-		//--End of modifications
+		// BOXER-HOOK: dos-visible-joystick-state - Host controller ownership
+		// remains with Boxer while DOS visibility controls port installation.
+		const bool is_visible = joytype != JOY_ONLY_FOR_MAPPING &&
+		                        joytype != JOY_DISABLED;
+		stick[0].is_visible_to_dos = is_visible;
+		stick[1].is_visible_to_dos = is_visible;
+		if (is_visible) {
+			ReadHandler.Install(0x201, read_p201_switchable, io_width_t::byte);
+			WriteHandler.Install(0x201, write_p201_switchable, io_width_t::byte);
+		}
+		// BOXER-HOOK: joystick-handler-install-end
 		
 		assert(section);
 
@@ -596,12 +605,12 @@ public:
 		autofire = section->Get_bool("autofire");
 		button_wrapping_enabled = section->Get_bool("buttonwrap");
 		
-		//--Disabled 2011-04-25 by Alun Bestor: Boxer sets this itself earlier
+		// BOXER-HOOK: preserve-controller-ownership - Boxer initializes
+		// joystick enabled state from its Cocoa controller ownership layer.
 		/*
 		stick[0].enabled = false;
 		stick[1].enabled = false;
 		*/
-		//--End of modifications
 		
 		stick[0].deadzone = section->Get_int("deadzone");
 		swap34 = section->Get_bool("swap34");
@@ -621,25 +630,6 @@ public:
 		stick[1].ypos = 0.0;
 		stick[0].transformed = false;
 
-		//--Modified 2011-05-08 by Alun Bestor to let Boxer set and retrieve the gameport timing mode.
-		// Does the user want joysticks to visible and usable in DOS?
-//		const bool is_visible = (joytype != JOY_ONLY_FOR_MAPPING &&
-//		                         joytype != JOY_DISABLED);
-//		stick[0].is_visible_to_dos = is_visible;
-//		stick[1].is_visible_to_dos = is_visible;
-//
-//		// Setup the joystick IO port handlers, which lets DOS games
-//		// detect and use them
-//		if (is_visible) {
-//			const bool wants_timed = section->Get_bool("timed");
-//			ReadHandler.Install(0x201,
-//			                    wants_timed ? read_p201_timed : read_p201,
-//			                    io_width_t::byte);
-//			WriteHandler.Install(0x201,
-//			                     wants_timed ? write_p201_timed : write_p201,
-//			                     io_width_t::byte);
-//		}
-		//--End of modifications
 	}
 	~JOYSTICK() {
 		// No-op if IO handlers were not installed
@@ -653,9 +643,12 @@ static JOYSTICK* test;
 void JOYSTICK_Destroy([[maybe_unused]] Section *sec)
 {
 	delete test;
+	test = nullptr;
 }
 
 void JOYSTICK_Init(Section* sec) {
+	if (test)
+		return;
 	test = new JOYSTICK(sec);
 	sec->AddDestroyFunction(&JOYSTICK_Destroy,true); 
 }

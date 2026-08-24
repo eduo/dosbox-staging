@@ -98,6 +98,7 @@ public:
 	virtual bool UpdateDateTimeFromHost() { return true; }
 	//--Added 2011-11-03 by Alun Bestor to let Boxer inform open file handles
 	//that their physical backing media will be removed.
+	// BOXER-HOOK: file-unavailable-notification
 	virtual void willBecomeUnavailable() {}
 	//--End of modifications
 	virtual void SetFlagReadOnlyMedium() {}
@@ -161,6 +162,7 @@ public:
 	uint16_t GetInformation();
 	bool UpdateDateTimeFromHost();
 	void Flush();
+	// BOXER-HOOK: local-file-unavailable-notification
 	void willBecomeUnavailable() override;
 	void SetFlagReadOnlyMedium() { read_only_medium = true; }
 	const char *GetBaseDir() const { return basedir; }
@@ -319,13 +321,18 @@ public:
 	virtual const char *GetLabel() { return dirCache.GetLabel(); }
 	virtual void SetLabel(const char *label, bool iscdrom, bool updatable) {};
 
-	//--Added 2009-10-25 by Alun Bestor to access the base system path for a drive
+	// BOXER-BEGIN: drive-system-path
+	// Reason: Boxer needs the host filesystem path behind DOS drives for
+	// gamebox package integration, UI display, and file tracking.
+	// Preserve: DOS_Drive exposes a system path and short-name lookup hook for
+	// Boxer subclasses/callers.
+	// Upstream risk: Removing these members hides DOS drive backing locations
+	// from Boxer's gamebox/file-management layer.
 	char systempath[CROSS_LEN];
 	virtual char * getSystemPath(void);
 
-	//Added 2010-12-11 by Alun Bestor to give Boxer the ability to do directory cache lookups
 	virtual bool getShortName(const char* dirpath, const char*filename, char* shortname) { return false; };
-	//--End of modifications
+	// BOXER-END: drive-system-path
 
 	DOS_Drive_Cache dirCache;
 

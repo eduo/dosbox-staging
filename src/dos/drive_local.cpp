@@ -52,6 +52,15 @@ bool localDrive::FileCreate(DOS_File * * file,char * name,uint16_t /*attributes*
 	safe_strcpy(newname, basedir);
 	safe_strcat(newname, name);
 	CROSS_FILENAME(newname);
+	// BOXER-HOOK: file-create-write-policy
+	// BOXER-HOOK: file-open-write-policy
+	// BOXER-HOOK: file-open-write-policy-end
+	// BOXER-HOOK: file-delete-write-policy
+	// BOXER-HOOK: local-file-created
+	// BOXER-HOOK: local-file-removed
+	// BOXER-HOOK: local-drive-system-path
+	// BOXER-HOOK: unavailable-file-read
+	// BOXER-HOOK: unavailable-file-write
 	if (!boxer_shouldAllowWriteAccessToPath(newname, this)) {
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
@@ -275,9 +284,9 @@ bool localDrive::FileUnlink(char * name) {
 		if (remove(fullname) == 0) {
 			dirCache.DeleteEntry(newname);
 			
-			//--Added 2010-08-21 by Alun Bestor to let Boxer monitor DOSBox's file operations
+			// BOXER-HOOK: local-open-file-removed - Boxer tracks deletion that
+			// succeeds after DOSBox closes an open host file handle.
 			boxer_didRemoveLocalFile(fullname, this);
-			//--End of modifications
 			return true;
 		}
 	}
@@ -490,10 +499,16 @@ bool localDrive::MakeDir(char * dir) {
 	safe_strcpy(newdir, basedir);
 	safe_strcat(newdir, dir);
 	CROSS_FILENAME(newdir);
-	const int temp = create_dir(dirCache.GetExpandName(newdir), 0775);
-	if (temp == 0)
+	// BOXER-BEGIN: local-dir-create-policy
+	if (!boxer_shouldAllowWriteAccessToPath(newdir, this)) {
+		DOS_SetError(DOSERR_ACCESS_DENIED);
+		return false;
+	}
+	const bool created = boxer_createLocalDir(dirCache.GetExpandName(newdir), this);
+	if (created)
 		dirCache.CacheOut(newdir, true);
-	return (temp==0);// || ((temp!=0) && (errno==EEXIST));
+	return created;
+	// BOXER-END: local-dir-create-policy
 }
 
 bool localDrive::RemoveDir(char * dir) {
@@ -758,7 +773,8 @@ bool localFile::Seek(uint32_t *pos_addr, uint32_t type)
 		//which appears to be the behaviour expected by DOS.
 		return true;
 	}
-	//--End of modifications
+	// BOXER-HOOK: unavailable-file-seek - Boxer can invalidate host handles
+	// while DOS still sees the file open; seeks must fail DOS-compatibly.
 
 	// The inbound position is actually an int32_t being passed through a
 	// uint32_t* pointer (pos_addr), so reinterpret the underlying memory as
@@ -854,9 +870,9 @@ bool localFile::UpdateDateTimeFromHost()
 	if (!open)
 		return false;
 
-	//--Added 2011-11-03 by Alun Bestor to avoid errors on closed files
+	// BOXER-HOOK: unavailable-file-timestamp - Boxer skips timestamp refresh
+	// after it has closed an unavailable host handle.
 	if (!fhandle) return false;
-	//--End of modifications
 	// Legal defaults if we're unable to populate them
 	time = 1;
 	date = 1;
@@ -878,6 +894,7 @@ bool localFile::UpdateDateTimeFromHost()
 	return true;
 }
 
+// BOXER-BEGIN: local-file-unavailable
 void localFile::willBecomeUnavailable()
 {
 	if (fhandle) {
@@ -885,6 +902,7 @@ void localFile::willBecomeUnavailable()
 		fhandle = nullptr;
 	}
 }
+// BOXER-END: local-file-unavailable
 
 void localFile::Flush()
 {

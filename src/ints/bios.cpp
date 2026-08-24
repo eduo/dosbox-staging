@@ -608,6 +608,9 @@ static Bitu INT17_Handler(void) {
 	
 	switch(reg_ah) {
         case 0x00:		// PRINTER: Write Character
+            // BOXER-HOOK: bios-parport-include
+            // BOXER-HOOK: int17-printer-emulation
+            // BOXER-HOOK: bios-equipment-parport-count
             if(parallelPortObjects[reg_dx]!=0) {
                 if(parallelPortObjects[reg_dx]->Putchar(reg_al))
                     reg_ah=parallelPortObjects[reg_dx]->getPrinterStatus();
@@ -1387,7 +1390,8 @@ public:
 			ppindex++;
 		}
          */
-        //--End of modifications
+        // BOXER-HOOK: bios-parport-detection-disabled - Proper parallel-port
+        // emulation owns LPT detection instead of hard-coded BIOS probing.
 
 		/* Setup equipment list */
 		// look http://www.bioscentral.com/misc/bda.htm
@@ -1403,7 +1407,6 @@ public:
 		if(ppindex == 2) config |= 0x4000;
 		else config |= 0xc000;	// 3 ports
          */
-        //--End of modifications
 #if (C_FPU)
 		//FPU
 		config|=0x2;
@@ -1514,7 +1517,8 @@ void BIOS_SetLPTPort(Bitu port, uint16_t baseaddr) {
 	equipmentword |= (portcount << 14);
 	mem_writew(BIOS_CONFIGURATION,equipmentword);
 }
-//--End of modifications
+// BOXER-HOOK: bios-refresh-parport-count - Boxer printer support needs the
+// BIOS equipment word synchronized with registered parallel ports.
 
 static BIOS* test;
 

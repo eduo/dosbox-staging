@@ -92,6 +92,8 @@ static struct {
 
 } capture = {};
 
+// BOXER-BEGIN: capture-file-routing
+#if 0
 FILE * OpenCaptureFile(const char * type,const char * ext) {
 	if(capturedir.empty()) {
 		LOG_MSG("Please specify a capture directory");
@@ -146,6 +148,8 @@ FILE * OpenCaptureFile(const char * type,const char * ext) {
 	}
 	return handle;
 }
+#endif
+// BOXER-END: capture-file-routing
 
 #if (C_SSHOT)
 static void CAPTURE_AddAviChunk(const char * tag, uint32_t size, void * data, uint32_t flags) {

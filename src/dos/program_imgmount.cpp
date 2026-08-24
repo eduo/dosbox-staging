@@ -479,6 +479,10 @@ void IMGMOUNT::Run(void) {
         WriteOut(MSG_Get("PROGRAM_IMGMOUNT_MOUNT_NUMBER"),drive - '0',temp_line.c_str());
     }
 
+	// BOXER-HOOK: imgmount-drive-mounted - Notify Boxer after the image drive
+	// mapping has been committed.
+	boxer_driveDidMount(drive - 'A');
+
     // check if volume label is given. be careful for cdrom
     //if (cmd->FindString("-label",label,true)) newdrive->dirCache.SetLabel(label.c_str());
     return;

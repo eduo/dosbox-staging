@@ -745,6 +745,7 @@ fatDrive::fatDrive(const char *sysFilename,
 	  curFatSect(0)
 {
 	//--Added 2009-10-25 by Alun Bestor to allow Boxer to track the system path for DOSBox drives
+	// BOXER-HOOK: fat-drive-system-path
 	safe_strcpy(systempath, sysFilename);
 	//--End of modifications
 	FILE *diskfile;
@@ -778,10 +779,10 @@ fatDrive::fatDrive(const char *sysFilename,
         {
             LOG_MSG("Possibly invalid partition table in disk image.");
 			
-            //--Added 2011-07-22 by Alun Bestor to bail out of reading invalid images
+            // BOXER-HOOK: invalid-fat-image-fails-construction - Boxer imports
+            // disk images and must reject invalid partition tables cleanly.
             created_successfully = false;
             return;
-            //--End of modifications
         }
 
 		startSector = 63;
@@ -882,10 +883,10 @@ fatDrive::fatDrive(const char *sysFilename,
 		/* Not a FAT filesystem */
 		LOG_MSG("Loaded image has no valid magicnumbers at the end!");
 		
-        //--Added 2011-07-22 by Alun Bestor to bail out of reading invalid images
+        // BOXER-HOOK: invalid-fat-bootsector-fails-construction - Boxer imports
+        // disk images and must reject invalid FAT boot sectors cleanly.
 		created_successfully = false;
 		return;
-        //--End of modifications
 	}
 
 	/* Sanity checks */

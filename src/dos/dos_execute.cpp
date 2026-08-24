@@ -138,9 +138,9 @@ void DOS_Terminate(uint16_t pspseg,bool tsr,uint8_t exitcode) {
 		cpudecoder=&CPU_Core_Normal_Run;
 		CPU_CycleLeft=0;
 		CPU_Cycles=0;
-		//--Added 2010-07-02 by Alun Bestor to notify Boxer when the core mode changes
+		// BOXER-HOOK: core-mode-title-refresh - BXCoalface maps GFX_SetTitle
+		// to Boxer so Cocoa UI state reflects DOSBox CPU core changes.
 		GFX_SetTitle(-1,-1,false);
-		//--End of modifications
 	}
 #endif
 

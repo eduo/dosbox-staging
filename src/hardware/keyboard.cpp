@@ -82,6 +82,7 @@ void KEYBOARD_ClrBuffer(void) {
 	keyb.scheduled=false;
 }
 
+// BOXER-HOOK: keyboard-buffer-capacity
 Bitu boxer_keyboardBufferRemaining()
 {
 	return keyb.used >= KEYBUFSIZE ? 0 : KEYBUFSIZE - keyb.used;

@@ -303,6 +303,7 @@ static Bitu MakeAspectTable(Bitu skip, Bitu height, double scaley, Bitu miny)
 	return linesadded;
 }
 
+// BOXER-BEGIN: render-reset-strategy
 static void RENDER_Reset(void)
 {
 	boxer_applyRenderingStrategy();
@@ -612,6 +613,8 @@ static void RENDER_CallBack(GFX_CallBackFunctions_t function)
 		E_Exit("Unhandled GFX_CallBackReset %d", function);
 	}
 }
+
+// BOXER-END: render-reset-strategy
 
 void RENDER_SetSize(uint32_t width, uint32_t height, unsigned bpp, double fps,
                     double ratio, bool dblw, bool dblh)

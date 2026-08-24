@@ -1469,21 +1469,22 @@ void VGA_SetupOther()
 	}
 }
 
+// BOXER-BEGIN: display-mode-controls
 uint8_t boxer_herculesTintMode()
 {
-    return static_cast<uint8_t>(hercules_palette);
+	return herc_pal;
 }
 
 void boxer_setHerculesTintMode(uint8_t mode)
 {
-    if (static_cast<uint8_t>(hercules_palette) == mode)
-        return;
+	if (herc_pal == mode)
+		return;
 
-    hercules_palette = MonochromePalette(mode % 3);
-    if (machine == MCH_HERC) {
-        VGA_SetHerculesPalette();
-        VGA_DAC_CombineColor(1, 7);
-    }
+	herc_pal = mode % 3;
+	if (machine == MCH_HERC) {
+		Herc_Palette();
+		VGA_DAC_CombineColor(1, 7);
+	}
 }
 
 double boxer_CGACompositeHueOffset()
@@ -1511,14 +1512,18 @@ void boxer_setCGAComponentMode(uint8_t mode)
     cga_comp = COMPOSITE_STATE(mode);
     if (static_cast<uint8_t>(cga_comp) > 2)
         cga_comp = COMPOSITE_STATE::AUTO;
-    if (vga.tandy.mode_control.is_tandy_border_enabled)
-        write_cga(0x3d8, vga.tandy.mode_control.data, io_width_t::byte);
+	if (vga.tandy.mode_control & 0x2)
+		write_cga(0x3d8, vga.tandy.mode_control, io_width_t::byte);
 }
 
-int boxer_GetDisplayRefreshRate()
+// BOXER-END: display-mode-controls
+
+// BOXER-BEGIN: display-refresh-rate
+int boxer_GetDisplayRefreshRate(void)
 {
     return 60;
 }
+// BOXER-END: display-refresh-rate
 
 static void composite_init(Section *sec)
 {

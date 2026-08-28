@@ -1,4 +1,4 @@
-name: MSYS2 builds
+name: Windows MSYS2 builds
 
 on: [push, pull_request]
 
@@ -179,6 +179,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: false
+          fetch-depth: 0
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -230,8 +231,9 @@ jobs:
       - name: Inject version string
         run: |
           set -x
-          git fetch --prune --unshallow
-          export VERSION=$(git describe --abbrev=5)
+          git fetch --prune --unshallow || true
+          git fetch --all --tags --force
+          export VERSION=$(git describe --abbrev=0)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Inject package name
@@ -240,10 +242,10 @@ jobs:
           echo "PKG_RELEASE=dosbox-staging-windows-msys2-${{ matrix.conf.arch }}-${{ env.VERSION }}" >> $GITHUB_ENV
 
       - name: Setup release build
-        run: meson setup -Db_lto=true -Db_lto_threads=$(nproc) $BUILD_RELEASE_DIR
+        run: meson setup -Ddefault_library=static -Db_lto=true -Db_lto_threads=$(nproc) $BUILD_RELEASE_DIR
 
       - name: Setup debugger build
-        run: meson setup -Db_lto=true -Db_lto_threads=$(nproc) -Denable_debugger=normal $BUILD_DEBUGGER_DIR
+        run: meson setup -Ddefault_library=static -Db_lto=true -Db_lto_threads=$(nproc) -Denable_debugger=normal $BUILD_DEBUGGER_DIR
 
       - name: Build release
         run: |
@@ -270,7 +272,7 @@ jobs:
             "$PKG_RELEASE"
           mv "${PKG_RELEASE}/dosbox.exe" "${PKG_RELEASE}/dosbox_with_debugger.exe"
           install -DT "${BUILD_RELEASE_DIR}/dosbox.exe" "${PKG_RELEASE}/dosbox.exe"
-          echo "artifact_name=dosbox-staging-windows-x64-`git describe --abbrev=4`" >> $GITHUB_ENV
+          echo "artifact_name=dosbox-staging-windows-x64-`git describe --abbrev=0`" >> $GITHUB_ENV
           echo "artifact_path=${{ github.workspace }}\msvc" >> $GITHUB_ENV
 
       - name: Windows Defender AV Scan
@@ -295,7 +297,7 @@ jobs:
         uses: dawidd6/action-download-artifact@v2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: windows.yml
+          workflow: windows-msvc.yml
           name: ${{ env.artifact_name }}
           path: ${{ env.artifact_path }}
           if_no_artifact_found: warn
@@ -306,6 +308,9 @@ jobs:
           if [[ "${{ github.ref }}" == "refs/tags/"* ]] && [[ "${{ github.ref }}" != *"-"* ]]; then
             version_tag=`echo ${{ github.ref }} | sed -r 's/([^\/]*\/){2}//'`
             packageinfo="release $version_tag"
+          elif [[ "${{ github.ref }}" == "refs/heads/release/"* ]]; then
+            version_tag=`git describe --tags | cut -f1 -d"-"`
+            packageinfo="release $version_tag"
           elif [ -n "${{ github.ref }}" ] && [ -n "${{ github.sha }}" ]; then
             git_branch=`echo ${{ github.ref }} | sed -r 's/([^\/]*\/){2}//'`
             git_commit=`echo ${{ github.sha }} | awk '{print substr($0,1,9);exit}'`
@@ -314,9 +319,9 @@ jobs:
             packageinfo="a development branch"
           fi
           mkdir out
-          echo "version_number=`git describe --tags --abbrev=4`" >> $GITHUB_ENV
+          echo "version_number=`git describe --tags --abbrev=0`" >> $GITHUB_ENV
           sed -e "s|%PACKAGE_INFORMATION%|${packageinfo}|;s|%GITHUB_REPO%|${{ github.repository }}|" docs/README.template >out/setup_preamble.txt
-          sed -i "s|DOSBOX-STAGING-VERSION|`git describe --tags --abbrev=4`|" contrib/windows_installer/DOSBox-Staging-setup.iss
+          sed -i "s|DOSBOX-STAGING-VERSION|`git describe --tags --abbrev=0`|" contrib/windows_installer/DOSBox-Staging-setup.iss
           echo @echo off >out/dosbox_with_console.bat
           echo \"%~dp0\\dosbox.exe\" %* >>out/dosbox_with_console.bat
           echo if errorlevel 1 pause >>out/dosbox_with_console.bat
@@ -374,8 +379,9 @@ jobs:
         shell: bash
         run: |
           set +x
-          git fetch --unshallow
-          VERSION=$(git describe --abbrev=4)
+          git fetch --unshallow || true
+          git fetch --all --tags --force
+          VERSION=$(git describe --abbrev=0)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           NEWEST_TAG=$(git describe --abbrev=0)
           git log "$NEWEST_TAG..HEAD" > changelog-$VERSION.txt

@@ -347,6 +347,16 @@ if (OPT_SLIRP)
   set(C_SLIRP ON)
 endif()
 
+option(OPT_SOUNDCANVAS "Enable the SoundCanvas SC-55 MIDI device (CLAP plugin host)" ON)
+if (OPT_SOUNDCANVAS)
+  set(C_SOUNDCANVAS ON)
+endif()
+
+option(OPT_WEBSERVER "Enable the built-in web server" ON)
+if (OPT_WEBSERVER)
+  set(C_WEBSERVER ON)
+endif()
+
 # Parallel port printer redirection needs a host printer backend supplied by the
 # embedding application (Boxer), so it is off for stock builds.
 option(OPT_PRINTER "Enable parallel port printer redirection" OFF)

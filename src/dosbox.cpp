@@ -76,8 +76,10 @@
 #include "shell/autoexec.h"
 #include "shell/shell.h"
 #include "utils/math_utils.h"
+#if C_WEBSERVER
 #include "webserver/webserver.h"
 #include "webserver/bridge.h"
+#endif
 
 MachineType machine   = MachineType::None;
 SvgaType    svga_type = SvgaType::None;
@@ -128,9 +130,11 @@ static Bitu normal_loop()
 #endif
 
 		if (PIC_RunQueue()) {
+#if C_WEBSERVER
 			if (WEBSERVER_IsEnabled()) {
 				Webserver::Bridge::Instance().ProcessRequests();
 			}
+#endif
 
 			ret = (*cpudecoder)();
 			if (ret < 0) {
@@ -1101,8 +1105,12 @@ void DOSBOX_InitModuleConfigsAndMessages()
 #if C_MT32EMU
 	MT32_AddConfigSection(control);
 #endif
+#if C_FLUIDSYNTH
 	FSYNTH_AddConfigSection(control);
+#endif
+#if C_SOUNDCANVAS
 	SOUNDCANVAS_AddConfigSection(control);
+#endif
 
 	// The MIDI section must be added *after* the FluidSynth, MT-32 and
 	// SoundCanvas MIDI device sections. If the MIDI section is intialised
@@ -1130,7 +1138,9 @@ void DOSBOX_InitModuleConfigsAndMessages()
 	IPX_AddConfigSection(control);
 
 	ETHERNET_AddConfigSection(control);
+#if C_WEBSERVER
 	WEBSERVER_AddConfigSection(control);
+#endif
 
 	control->AddAutoexecSection();
 
@@ -1197,14 +1207,18 @@ void DOSBOX_InitModules()
 	ETHERNET_Init();
 	VIRTUALBOX_Init();
 	VMWARE_Init();
+#if C_WEBSERVER
 	WEBSERVER_Init();
+#endif
 
 	AUTOEXEC_Init();
 }
 
 void DOSBOX_DestroyModules()
 {
+#if C_WEBSERVER
 	WEBSERVER_Destroy();
+#endif
 	VMWARE_Destroy();
 	VIRTUALBOX_Destroy();
 	ETHERNET_Destroy();

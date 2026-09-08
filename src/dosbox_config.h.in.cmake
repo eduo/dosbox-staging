@@ -90,6 +90,16 @@
 // build without network support.
 #cmakedefine01 C_SLIRP
 
+// Define to 1 to enable the SoundCanvas SC-55 MIDI device. It is satisfied by
+// the in-tree CLAP plugin host, but it is still a MIDI device an embedder that
+// drives MIDI itself has no way to expose.
+#cmakedefine01 C_SOUNDCANVAS
+
+// Define to 1 to enable the built-in web server. It needs asio and is reached
+// from the emulation loop; embedders that host DOSBox inside their own
+// application build without it.
+#cmakedefine01 C_WEBSERVER
+
 // Define to 1 to enable parallel port printer redirection. This requires a
 // host-side printer backend to be linked in (Boxer provides one via
 // BXCoalface); the stock CMake build leaves it off.

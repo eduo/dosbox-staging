@@ -17,7 +17,9 @@
 #endif
 #include "private/midi_device.h"
 #include "private/mt32.h"
+#if C_SOUNDCANVAS
 #include "private/soundcanvas.h"
+#endif
 
 #if defined(MACOSX)
 #include "private/coreaudio.h"
@@ -84,9 +86,11 @@ static std::unique_ptr<MidiDevice> create_device(
 	using namespace MidiDeviceName;
 
 	// Internal MIDI synths
+#if C_SOUNDCANVAS
 	if (name == MidiDeviceName::SoundCanvas) {
 		return std::make_unique<MidiDeviceSoundCanvas>();
 	}
+#endif
 #if C_FLUIDSYNTH
 	// namespace prefix required to avoid ambiguity with FluidSynth namespace
 	if (name == MidiDeviceName::FluidSynth) {
@@ -687,12 +691,14 @@ void MIDI_ListDevices(MoreOutputStrings& output)
 	                 output);
 #endif
 
+#if C_SOUNDCANVAS
 	write_device_name(MidiDeviceName::SoundCanvas);
 
 	SOUNDCANVAS_ListDevices((device_name == MidiDeviceName::SoundCanvas)
 	                                ? dynamic_cast<MidiDeviceSoundCanvas*>(device_ptr)
 	                                : nullptr,
 	                        output);
+#endif
 
 #if C_FLUIDSYNTH
 	write_device_name(MidiDeviceName::FluidSynth);

@@ -28,7 +28,12 @@
 #include "programs/rescan.h"
 #include "programs/serial.h"
 #include "programs/setver.h"
+#if !C_BOXER
+// SHOWPIC is the only thing in the tree that needs SDL_image. Boxer would have
+// to bundle that library purely for a DOS picture viewer its users never run,
+// so the program is left out of Boxer builds.
 #include "programs/showpic.h"
+#endif
 #include "programs/subst.h"
 #include "programs/tree.h"
 #include "shell/autoexec.h"
@@ -88,7 +93,9 @@ void DOS_SetupPrograms()
 	PROGRAMS_MakeFile("RESCAN.COM", ProgramCreate<RESCAN>);
 	PROGRAMS_MakeFile("SERIAL.COM", ProgramCreate<SERIAL>);
 	PROGRAMS_MakeFile("SETVER.EXE", ProgramCreate<SETVER>);
+#if !C_BOXER
 	PROGRAMS_MakeFile("SHOWPIC.EXE", ProgramCreate<SHOWPIC>);
+#endif
 	PROGRAMS_MakeFile("SUBST.EXE", ProgramCreate<SUBST>);
 	PROGRAMS_MakeFile("TREE.COM", ProgramCreate<TREE>);
 

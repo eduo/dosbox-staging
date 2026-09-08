@@ -12,6 +12,19 @@
 // must be included after dosbox_config.h
 #include "SDL.h"
 
+#ifndef SDL_HINT_MAC_COLOR_SPACE
+// dosbox-staging builds against a patched SDL2 -- see
+// vcpkg-ports/sdl2/macos-color-space-hint.patch, which adds this hint so the
+// renderers can request Display P3 or sRGB output on macOS.
+//
+// Boxer links a stock SDL2 framework, where the hint does not exist. Defining
+// the string keeps the two SDL_SetHint() call sites compiling; SDL ignores
+// hints it does not recognise, so the window simply keeps SDL's default colour
+// space. Remove this once Boxer ships an SDL2 carrying the patch.
+#define SDL_HINT_MAC_COLOR_SPACE "SDL_HINT_MAC_COLOR_SPACE"
+#endif
+
+
 constexpr uint8_t GFX_CAN_8      = 1 << 0;
 constexpr uint8_t GFX_CAN_15     = 1 << 1;
 constexpr uint8_t GFX_CAN_16     = 1 << 2;

@@ -342,6 +342,11 @@ if (OPT_FLUIDSYNTH)
   set(C_FLUIDSYNTH ON)
 endif()
 
+option(OPT_SLIRP "Enable the slirp Ethernet backend (NE2000 networking)" ON)
+if (OPT_SLIRP)
+  set(C_SLIRP ON)
+endif()
+
 # Parallel port printer redirection needs a host printer backend supplied by the
 # embedding application (Boxer), so it is off for stock builds.
 option(OPT_PRINTER "Enable parallel port printer redirection" OFF)

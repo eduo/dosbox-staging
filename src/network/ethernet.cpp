@@ -6,7 +6,9 @@
 #include <cstring>
 #include <memory>
 
+#if C_SLIRP
 #include "ethernet_slirp.h"
+#endif
 
 #include "config/config.h"
 #include "hardware/network/ne2000.h"
@@ -15,6 +17,7 @@ EthernetConnection* ETHERNET_OpenConnection([[maybe_unused]] const std::string& 
 {
 	EthernetConnection* conn = nullptr;
 
+#if C_SLIRP
 	// Currently only slirp is supported
 	if (backend == "slirp") {
 		conn = new SlirpEthernetConnection;
@@ -26,6 +29,7 @@ EthernetConnection* ETHERNET_OpenConnection([[maybe_unused]] const std::string& 
 			conn = nullptr;
 		}
 	}
+#endif
 
 	return conn;
 }

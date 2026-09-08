@@ -436,6 +436,7 @@ conf_data.set_quoted(
 conf_data.set10(os_family_name, true)
 conf_data.set10('C_MT32EMU', get_option('use_mt32emu'))
 conf_data.set10('C_FLUIDSYNTH', true)
+conf_data.set10('C_SLIRP', true)
 conf_data.set10('C_PRINTER', false)
 conf_data.set10('C_BOXER', false)
 conf_data.set10('C_FPU', true)

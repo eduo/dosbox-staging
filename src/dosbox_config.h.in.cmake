@@ -85,6 +85,11 @@
 // turn it off; every other device is satisfied from the tree.
 #cmakedefine01 C_FLUIDSYNTH
 
+// Define to 1 to enable the slirp Ethernet backend (NE2000 networking). It is
+// the only Ethernet backend and needs libslirp; embedders that do not link it
+// build without network support.
+#cmakedefine01 C_SLIRP
+
 // Define to 1 to enable parallel port printer redirection. This requires a
 // host-side printer backend to be linked in (Boxer provides one via
 // BXCoalface); the stock CMake build leaves it off.

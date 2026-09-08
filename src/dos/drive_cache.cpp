@@ -15,6 +15,10 @@
 #include "misc/support.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 int fileInfoCounter = 0;
 
 bool SortByName(DOS_Drive_Cache::CFileInfo* const a,
@@ -737,6 +741,13 @@ bool DOS_Drive_Cache::OpenDir(CFileInfo* dir, const char* expand, uint16_t& id) 
 }
 
 void DOS_Drive_Cache::CreateEntry(CFileInfo* dir, const char* name, bool is_directory) {
+#if C_BOXER
+	// Let Boxer hide macOS metadata files that DOS programs shouldn't see.
+	if (!boxer_shouldShowFileWithName(name)) {
+		return;
+	}
+#endif
+
 	auto info = new CFileInfo;
 	safe_strcpy(info->orgname, name);
 	info->shortNr = 0;

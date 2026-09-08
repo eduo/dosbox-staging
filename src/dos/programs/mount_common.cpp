@@ -8,6 +8,10 @@
 #include "dos/drives.h"
 #include "misc/support.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 Bitu ZDRIVE_NUM = 25;
 
 std::string UnmountHelper(char umount)
@@ -47,6 +51,10 @@ std::string UnmountHelper(char umount)
 	if (i_drive < MAX_DISK_IMAGES && imageDiskList[i_drive]) {
 		imageDiskList[i_drive] = nullptr;
 	}
+
+#if C_BOXER
+	boxer_driveDidUnmount(i_drive);
+#endif
 
 	return MSG_Get("PROGRAM_MOUNT_UMOUNT_SUCCESS");
 }

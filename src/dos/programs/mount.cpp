@@ -25,6 +25,10 @@
 #include "utils/string_utils.h"
 #include <sys/stat.h>
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 #ifndef S_ISREG
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #endif
@@ -316,6 +320,9 @@ bool MOUNT::MountImageFat(MountParameters& params)
 	// Update DriveManager
 	DriveManager::AppendFilesystemImages(drive_index(params.drive), fat_images);
 	DriveManager::InitializeDrive(drive_index(params.drive));
+#if C_BOXER
+	boxer_driveDidMount(drive_index(params.drive));
+#endif
 
 	// Set the correct media byte in the table
 	// Each entry is 9 bytes, with the media byte at offset 0x00
@@ -417,6 +424,9 @@ bool MOUNT::MountImageIso(const MountParameters& params)
 	// Update DriveManager
 	DriveManager::AppendFilesystemImages(drive_index(params.drive), iso_images);
 	DriveManager::InitializeDrive(drive_index(params.drive));
+#if C_BOXER
+	boxer_driveDidMount(drive_index(params.drive));
+#endif
 
 	// Set the correct media byte in the table
 	mem_writeb(RealToPhysical(dos.tables.mediaid) + drive_index(params.drive) * 9,
@@ -1249,6 +1259,10 @@ void MOUNT::MountLocal(MountParameters& params, const std::string& local_path)
 
 	DriveManager::RegisterFilesystemImage(drive_index(params.drive), newdrive);
 	Drives.at(drive_index(params.drive)) = newdrive;
+
+#if C_BOXER
+	boxer_driveDidMount(drive_index(params.drive));
+#endif
 
 	// Set the correct media byte in the table
 	mem_writeb(RealToPhysical(dos.tables.mediaid) +

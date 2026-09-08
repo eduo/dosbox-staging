@@ -25,6 +25,10 @@
 #include "utils/fs_utils.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 bool localDrive::FileIsReadOnly(const char* name)
 {
 	FatAttributeFlags test_attr = {};
@@ -60,6 +64,14 @@ std::unique_ptr<DOS_File> localDrive::FileCreate(const char* name,
 	// calls.
 	char expanded_name[CROSS_LEN];
 	safe_strcpy(expanded_name, dirCache.GetExpandNameAndNormaliseCase(newname));
+
+#if C_BOXER
+	// Boxer selectively denies write access to files it manages.
+	if (!boxer_shouldAllowWriteAccessToPath(newname, this)) {
+		DOS_SetError(DOSERR_ACCESS_DENIED);
+		return nullptr;
+	}
+#endif
 
 	const bool file_exists = FileExists(expanded_name);
 
@@ -97,6 +109,10 @@ std::unique_ptr<DOS_File> localDrive::FileCreate(const char* name,
 	                                        weak_from_this(),
 	                                        dos_time,
 	                                        OPEN_READWRITE);
+
+#if C_BOXER
+	boxer_didCreateLocalFile(expanded_name, this);
+#endif
 
 	return file;
 }
@@ -173,6 +189,25 @@ std::unique_ptr<DOS_File> localDrive::FileOpen(const char* name, uint8_t flags)
 			fallback_to_readonly = true;
 		}
 	}
+
+#if C_BOXER
+	// Boxer can deny write access to files it manages. Mirror the read-only
+	// medium case above: downgrade a read/write open to read-only, but fail
+	// an outright write-only open, as the pre-0.83 hook did.
+	if (!boxer_shouldAllowWriteAccessToPath(host_filename.c_str(), this)) {
+		host_write_access = false;
+		if (dos_write_access) {
+			if ((flags & 3) == OPEN_READWRITE) {
+				flags                = OPEN_READ;
+				dos_write_access     = false;
+				fallback_to_readonly = true;
+			} else {
+				DOS_SetError(DOSERR_ACCESS_DENIED);
+				return nullptr;
+			}
+		}
+	}
+#endif
 
 	NativeFileHandle file_handle = open_native_file(host_filename.c_str(),
 	                                                host_write_access);
@@ -267,6 +302,9 @@ bool localDrive::FileUnlink(const char* name)
 	if (delete_native_file(fullname)) {
 		timestamp_cache.erase(fullname);
 		dirCache.DeleteEntry(newname);
+#if C_BOXER
+		boxer_didRemoveLocalFile(fullname, this);
+#endif
 		return true;
 	}
 
@@ -455,12 +493,29 @@ bool localDrive::MakeDir(const char* dir)
 	safe_strcat(newdir, dir);
 	CROSS_FILENAME(newdir);
 
+#if C_BOXER
+	const char* expanded_dir = dirCache.GetExpandNameAndNormaliseCase(newdir);
+
+	if (!boxer_shouldAllowWriteAccessToPath(expanded_dir, this)) {
+		DOS_SetError(DOSERR_ACCESS_DENIED);
+		return false;
+	}
+
+	// Boxer creates the directory itself so it can keep its own view of
+	// the gamebox in step.
+	const bool created = boxer_createLocalDir(expanded_dir, this);
+	if (created) {
+		dirCache.CacheOut(newdir, true);
+	}
+	return created;
+#else
 	const auto result = local_drive_create_dir(
 	        dirCache.GetExpandNameAndNormaliseCase(newdir));
 	if (result == DOSERR_NONE) {
 		dirCache.CacheOut(newdir, true);
 	}
 	return (result == DOSERR_NONE);
+#endif
 }
 
 bool localDrive::RemoveDir(const char* dir)

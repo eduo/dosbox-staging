@@ -306,7 +306,7 @@ public:
 			}
 
 			pname[8] = static_cast<char>('1' + i);
-			CommandLine cmd(0, section->GetString(pname));
+			CommandLine cmd("", section->GetString(pname));
 
 			std::string str;
 			cmd.FindCommand(1, str);

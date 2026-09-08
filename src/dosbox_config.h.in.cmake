@@ -80,6 +80,11 @@
 // Define to 1 to enable MT-32 emulator
 #cmakedefine01 C_MT32EMU
 
+// Define to 1 to enable parallel port printer redirection. This requires a
+// host-side printer backend to be linked in (Boxer provides one via
+// BXCoalface); the stock CMake build leaves it off.
+#cmakedefine01 C_PRINTER
+
 // Define to 1 to enable mouse mapping support
 #cmakedefine01 C_MANYMOUSE
 

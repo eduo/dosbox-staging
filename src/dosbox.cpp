@@ -54,6 +54,7 @@
 #include "hardware/pci_bus.h"
 #include "hardware/pic.h"
 #include "hardware/port.h"
+#include "hardware/parport/parport.h"
 #include "hardware/serialport/serialport.h"
 #include "hardware/timer.h"
 #include "hardware/video/reelmagic/reelmagic.h"
@@ -1091,6 +1092,7 @@ void DOSBOX_InitModuleConfigsAndMessages()
 	REELMAGIC_AddConfigSection(control);
 	JOYSTICK_AddConfigSection(control);
 	SERIAL_AddConfigSection(control);
+	PARALLEL_AddConfigSection(control);
 	DOS_AddConfigSection(control);
 	IPX_AddConfigSection(control);
 
@@ -1155,6 +1157,7 @@ void DOSBOX_InitModules()
 
 	DISKNOISE_Init();
 	SERIAL_Init();
+	PARALLEL_Init();
 	DOS_Init();
 
 	IPX_Init();
@@ -1175,6 +1178,7 @@ void DOSBOX_DestroyModules()
 	IPX_Destroy();
 
 	DOS_Destroy();
+	PARALLEL_Destroy();
 	SERIAL_Destroy();
 	DISKNOISE_Destroy();
 

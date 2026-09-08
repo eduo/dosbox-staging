@@ -134,6 +134,11 @@ void INT10_ReloadRomFonts();
 
 void BIOS_SetComPorts (uint16_t baseaddr[]);
 
+// Records the base address of parallel port `port` (0-based) in the BIOS data
+// area and updates the printer count in the equipment word. Pass a base
+// address of 0 to unregister the port.
+void BIOS_SetLPTPort(uint8_t port, uint16_t baseaddr);
+
 bool BIOS_ConfigureTandyDacCallbacks(const std::optional<bool> maybe_request_dac = {});
 
 #endif

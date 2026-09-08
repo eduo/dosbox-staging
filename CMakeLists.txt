@@ -337,6 +337,13 @@ if (OPT_MT32EMU)
   set(C_MT32EMU ON)
 endif()
 
+# Parallel port printer redirection needs a host printer backend supplied by the
+# embedding application (Boxer), so it is off for stock builds.
+option(OPT_PRINTER "Enable parallel port printer redirection" OFF)
+if (OPT_PRINTER)
+  set(C_PRINTER ON)
+endif()
+
 if (OPT_DEBUGGER)
   set(C_DEBUGGER ON)
 

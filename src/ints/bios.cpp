@@ -1553,6 +1553,34 @@ void BIOS_SetComPorts(uint16_t baseaddr[]) {
 	BIOS_SetEquipment(equipmentword);
 }
 
+void BIOS_SetLPTPort(uint8_t port, uint16_t baseaddr)
+{
+	switch (port) {
+	case 0: mem_writew(BIOS_ADDRESS_LPT1, baseaddr); break;
+	case 1: mem_writew(BIOS_ADDRESS_LPT2, baseaddr); break;
+	case 2: mem_writew(BIOS_ADDRESS_LPT3, baseaddr); break;
+	default: return;
+	}
+
+	// Recount the installed printers and update the equipment word, whose
+	// bits 14-15 hold the number of parallel ports.
+	uint16_t portcount = 0;
+	if (mem_readw(BIOS_ADDRESS_LPT1)) {
+		++portcount;
+	}
+	if (mem_readw(BIOS_ADDRESS_LPT2)) {
+		++portcount;
+	}
+	if (mem_readw(BIOS_ADDRESS_LPT3)) {
+		++portcount;
+	}
+
+	uint16_t equipmentword = mem_readw(BIOS_CONFIGURATION);
+	equipmentword &= (~0xC000);
+	equipmentword |= static_cast<uint16_t>(portcount << 14);
+	BIOS_SetEquipment(equipmentword);
+}
+
 static std::unique_ptr<BIOS> bios = {};
 
 void BIOS_Init()

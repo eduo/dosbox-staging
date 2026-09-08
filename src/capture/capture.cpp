@@ -47,6 +47,8 @@ static struct {
 		int32_t video              = 1;
 		int32_t image              = 1;
 		int32_t serial_log         = 1;
+		int32_t parallel_log       = 1;
+		int32_t parallel_stream    = 1;
 	} next_index = {};
 
 	void reset()
@@ -109,6 +111,9 @@ static const char* capture_type_to_string(const CaptureType type)
 
 	case CaptureType::SerialLog: return "serial log";
 
+	case CaptureType::ParallelLog: return "parallel log";
+	case CaptureType::ParallelStream: return "parallel port stream";
+
 	default: assertm(false, "Unknown CaptureType"); return "";
 	}
 }
@@ -129,6 +134,9 @@ static const char* capture_type_to_basename(const CaptureType type)
 
 	case CaptureType::SerialLog: return "serial";
 
+	case CaptureType::ParallelLog: return "parallel";
+	case CaptureType::ParallelStream: return "parallel";
+
 	default: assertm(false, "Unknown CaptureType"); return "";
 	}
 }
@@ -148,6 +156,9 @@ static const char* capture_type_to_extension(const CaptureType type)
 	case CaptureType::RenderedImage: return ".png";
 
 	case CaptureType::SerialLog: return ".serlog";
+
+	case CaptureType::ParallelLog: return ".parlog";
+	case CaptureType::ParallelStream: return ".prt";
 
 	default: assertm(false, "Unknown CaptureType"); return "";
 	}
@@ -243,6 +254,14 @@ static void set_next_capture_index(const CaptureType type, int32_t index)
 		capture.next_index.serial_log = index;
 		break;
 
+	case CaptureType::ParallelLog:
+		capture.next_index.parallel_log = index;
+		break;
+
+	case CaptureType::ParallelStream:
+		capture.next_index.parallel_stream = index;
+		break;
+
 	default: assertm(false, "Unknown CaptureType");
 	}
 }
@@ -267,7 +286,9 @@ static bool maybe_create_capture_dir_and_init_capture_indices()
 	                                             CaptureType::RawImage,
 	                                             CaptureType::UpscaledImage,
 	                                             CaptureType::RenderedImage,
-	                                             CaptureType::SerialLog};
+	                                             CaptureType::SerialLog,
+	                                             CaptureType::ParallelLog,
+	                                             CaptureType::ParallelStream};
 
 	for (auto type : all_capture_types) {
 		const auto index = find_highest_capture_index(type);
@@ -306,6 +327,9 @@ int32_t get_next_capture_index(const CaptureType type)
 	case CaptureType::RenderedImage: return capture.next_index.image++;
 
 	case CaptureType::SerialLog: return capture.next_index.serial_log++;
+
+	case CaptureType::ParallelLog: return capture.next_index.parallel_log++;
+	case CaptureType::ParallelStream: return capture.next_index.parallel_stream++;
 
 	default: assertm(false, "Unknown CaptureType"); return 0;
 	}

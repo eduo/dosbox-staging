@@ -11,6 +11,13 @@
 #include "config/config.h"
 #include "config/setup.h"
 
+#if C_BOXER
+// Boxer switches gameport timing at runtime; see the switchable handlers in
+// joystick.cpp.
+extern bool gameport_timed;
+#endif
+
+
 void JOYSTICK_AddConfigSection(const ConfigPtr& conf);
 void JOYSTICK_Init();
 void JOYSTICK_Destroy();

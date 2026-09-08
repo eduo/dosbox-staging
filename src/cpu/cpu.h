@@ -56,6 +56,12 @@ struct CpuAutoDetermineMode {
 	bool auto_cycles = false;
 };
 
+#if C_BOXER
+// Boxer takes over CPU speed and core selection, and clears these so DOSBox
+// does not reset either when a program exits. Defined in cpu.cpp.
+extern CpuAutoDetermineMode auto_determine_mode;
+#endif
+
 extern ArchitectureType CPU_ArchitectureType;
 extern Bitu CPU_PrefetchQueueSize;
 

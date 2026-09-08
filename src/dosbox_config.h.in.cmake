@@ -80,6 +80,11 @@
 // Define to 1 to enable MT-32 emulator
 #cmakedefine01 C_MT32EMU
 
+// Define to 1 to enable the FluidSynth MIDI device. It is the only MIDI device
+// that needs an external library, so embedders that do not link FluidSynth can
+// turn it off; every other device is satisfied from the tree.
+#cmakedefine01 C_FLUIDSYNTH
+
 // Define to 1 to enable parallel port printer redirection. This requires a
 // host-side printer backend to be linked in (Boxer provides one via
 // BXCoalface); the stock CMake build leaves it off.

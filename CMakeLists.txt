@@ -337,6 +337,11 @@ if (OPT_MT32EMU)
   set(C_MT32EMU ON)
 endif()
 
+option(OPT_FLUIDSYNTH "Enable the FluidSynth MIDI device" ON)
+if (OPT_FLUIDSYNTH)
+  set(C_FLUIDSYNTH ON)
+endif()
+
 # Parallel port printer redirection needs a host printer backend supplied by the
 # embedding application (Boxer), so it is off for stock builds.
 option(OPT_PRINTER "Enable parallel port printer redirection" OFF)

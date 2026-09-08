@@ -122,6 +122,16 @@ public:
 	virtual void AddRef() { refCtr++; }
 	virtual Bits RemoveRef() { return --refCtr; }
 
+#if C_BOXER
+	// Boxer unmounts drives out from under DOS while programs may still
+	// hold handles on them. This tells an open file that its backing media
+	// is about to disappear, so it can let go of any host resources while
+	// staying registered in Files[] — a program that keeps reading from it
+	// then gets errors rather than a dangling handle. Only localFile has
+	// anything to release; for everyone else this is a no-op.
+	virtual void willBecomeUnavailable() {}
+#endif
+
 	void SetDrive(uint8_t drv) { hdrive=drv;}
 	uint8_t GetDrive() const { return hdrive;}
 	uint8_t flags    = 0;

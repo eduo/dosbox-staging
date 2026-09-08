@@ -23,6 +23,9 @@ public:
 	void Close() override;
 	uint16_t GetInformation() override;
 	bool IsOnReadOnlyMedium() const override { return read_only_medium; }
+#if C_BOXER
+	void willBecomeUnavailable() override;
+#endif
 	const char* GetBaseDir() const
 	{
 		return basedir;

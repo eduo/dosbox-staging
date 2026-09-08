@@ -626,9 +626,39 @@ localDrive::localDrive(const char* startdir, uint16_t _bytes_sector,
 	dirCache.SetBaseDir(basedir);
 }
 
+#if C_BOXER
+void localFile::willBecomeUnavailable()
+{
+	// The host file is about to go away (Boxer is unmounting the drive
+	// backing it), so drop our handle on it but stay in Files[]. 0.78's
+	// version of this left the DOS_File flagged 'open'; 0.83 dropped that
+	// flag entirely — presence in Files[] is now what 'open' means — so
+	// releasing the handle is all there is left to do here.
+	if (file_handle != InvalidNativeFileHandle) {
+		MaybeFlushTime();
+		close_native_file(file_handle);
+		file_handle = InvalidNativeFileHandle;
+	}
+}
+
+// Boxer can invalidate a file's handle while DOS still holds it (see
+// willBecomeUnavailable above), so the IO entry points assert on a live
+// handle only when Boxer is not in the picture, and fail the DOS call
+// otherwise.
+#define BOXER_BAIL_IF_HANDLE_CLOSED()                     \
+	do {                                              \
+		if (file_handle == InvalidNativeFileHandle) { \
+			DOS_SetError(DOSERR_ACCESS_DENIED); \
+			return false;                     \
+		}                                         \
+	} while (0)
+#else
+#define BOXER_BAIL_IF_HANDLE_CLOSED() assert(file_handle != InvalidNativeFileHandle)
+#endif
+
 bool localFile::Read(uint8_t* data, uint16_t* num_bytes)
 {
-	assert(file_handle != InvalidNativeFileHandle);
+	BOXER_BAIL_IF_HANDLE_CLOSED();
 	// check if the file is opened in write-only mode
 	if ((this->flags & 0xf) == OPEN_WRITE) {
 		DOS_SetError(DOSERR_ACCESS_DENIED);
@@ -665,7 +695,7 @@ bool localFile::Read(uint8_t* data, uint16_t* num_bytes)
 
 bool localFile::Write(uint8_t* data, uint16_t* num_bytes)
 {
-	assert(file_handle != InvalidNativeFileHandle);
+	BOXER_BAIL_IF_HANDLE_CLOSED();
 	uint8_t lastflags = this->flags & 0xf;
 	if (lastflags == OPEN_READ || lastflags == OPEN_READ_NO_MOD) {	// check if file opened in read-only mode
 		DOS_SetError(DOSERR_ACCESS_DENIED);
@@ -710,7 +740,7 @@ bool localFile::Write(uint8_t* data, uint16_t* num_bytes)
 
 bool localFile::Seek(uint32_t *pos_addr, uint32_t type)
 {
-	assert(file_handle != InvalidNativeFileHandle);
+	BOXER_BAIL_IF_HANDLE_CLOSED();
 
 	// Tested this interrupt on MS-DOS 6.22
 	// The values for SEEK_CUR and SEEK_END can be negative
@@ -806,7 +836,14 @@ void localFile::MaybeFlushTime()
 
 void localFile::Close()
 {
+#if C_BOXER
+	// Boxer may already have released the handle from underneath us.
+	if (file_handle == InvalidNativeFileHandle) {
+		return;
+	}
+#else
 	assert(file_handle != InvalidNativeFileHandle);
+#endif
 
 	// only close if one reference left
 	if (refCtr == 1) {

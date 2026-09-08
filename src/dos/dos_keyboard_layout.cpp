@@ -887,6 +887,31 @@ bool boxer_keyboardLayoutSupported(const char* code)
 	return loaded_layout->ExtractCodePage(code) == dos.loaded_codepage;
 }
 
+// Switches to a different keyboard layout without touching the code page.
+//
+// 0.78 exposed this as the free function DOS_SwitchKeyboardLayout(); 0.83
+// removed it and folded the switch into DOS_LoadKeyboardLayout(), which always
+// (re)loads a code page and screen font as well. Boxer needs the layout-only
+// path: it swaps layouts while a DOS program may be running, which is only safe
+// when the code page does not move -- exactly the condition
+// boxer_keyboardLayoutSupported() above checks before Boxer calls this.
+bool boxer_switchKeyboardLayout(const char* new_layout)
+{
+	if (!loaded_layout || !new_layout) {
+		return false;
+	}
+
+	KeyboardLayout* changed_layout = nullptr;
+	const auto result = loaded_layout->SwitchKeyboardLayout(new_layout,
+	                                                        changed_layout);
+	if (changed_layout) {
+		// Remove the old layout, activate the new one
+		loaded_layout.reset(changed_layout);
+	}
+
+	return result == KeyboardLayoutResult::OK;
+}
+
 bool boxer_keyboardLayoutActive()
 {
 	return loaded_layout && loaded_layout->IsForeignLayoutActive();

@@ -174,7 +174,15 @@ static bool write_active = false;
 static bool swap34 = false;
 bool button_wrapping_enabled = true;
 
+#if C_BOXER
+// mapper.cpp owns 'autofire' and is the only thing that acts on it: it retriggers
+// held joystick buttons while polling SDL. Boxer replaces the mapper with its own
+// input handling and has no autofire of its own, so the setting is read and
+// stored here but nothing consumes it. See D24 in FINDINGS.md.
+bool autofire = false;
+#else
 extern bool autofire; //mapper.cpp
+#endif
 
 static uint8_t read_p201(io_port_t, io_width_t)
 {

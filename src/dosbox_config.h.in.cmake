@@ -85,6 +85,11 @@
 // BXCoalface); the stock CMake build leaves it off.
 #cmakedefine01 C_PRINTER
 
+// Define to 1 when building as Boxer's embedded emulator core. This enables
+// the boxer_* hook call sites, which are declared by Boxer's BXCoalface.h and
+// must be resolved by the embedding application.
+#cmakedefine01 C_BOXER
+
 // Define to 1 to enable mouse mapping support
 #cmakedefine01 C_MANYMOUSE
 

@@ -35,6 +35,10 @@
 #include "shell/command_line.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 // clang-format off
 static const std::map<std::string, SHELL_Cmd> shell_cmds = {
 	{ "CALL",     {&DOS_Shell::CMD_CALL,     "CALL",     HELP_Filter::All,    HELP_Category::Batch } },
@@ -229,6 +233,14 @@ void DOS_Shell::DoCommand(char* line)
 	if (is_empty(cmd_buffer)) {
 		return;
 	}
+
+#if C_BOXER
+	// Give Boxer the chance to handle the command itself, ahead of
+	// anything DOSBox would do with it.
+	if (!boxer_shellShouldRunCommand(this, cmd_buffer, line)) {
+		return;
+	}
+#endif
 
 	// First try to execute the line as internal shell command
 	if (ExecuteShellCommand(cmd_buffer, line)) {

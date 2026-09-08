@@ -23,6 +23,14 @@
 #include "utils/fs_utils.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+
+// The shell Boxer currently considers active. Boxer's hooks are handed the
+// shell they concern, but it also needs to know which one is running.
+DOS_Shell* currentShell = nullptr;
+#endif
+
 callback_number_t call_shellstop = 0;
 
 // Larger scope so shell_del autoexec can use it to
@@ -417,6 +425,11 @@ void DOS_Shell::RunBatchFile()
 			}
 			ParseLine(input_line);
 		} else {
+#if C_BOXER
+			// The batch file has run out of lines: this is where it
+			// ends now that BatchFile has no destructor of its own.
+			boxer_shellDidEndBatchFile(this, batchfiles.top().GetFileName());
+#endif
 			batchfiles.pop();
 		}
 	}
@@ -426,6 +439,11 @@ static bool is_shell_running = false;
 
 void DOS_Shell::Run()
 {
+#if C_BOXER
+	boxer_shellWillStart(this);
+	DOS_Shell* previousShell = currentShell;
+	currentShell             = this;
+#endif
 	// COMMAND.COM's /C and /INIT spawn sub-commands. When parsing help, we need
 	// to be sure the /? and -? are intended for us and not part of the
 	// sub-command.
@@ -445,12 +463,23 @@ void DOS_Shell::Run()
 		temp.echo = echo;
 		temp.ParseLine(input_line);
 		temp.RunBatchFile();
+#if C_BOXER
+		currentShell = previousShell;
+		boxer_shellDidFinish(this);
+#endif
 		return;
 	}
 	/* Start a normal shell and check for a first command init */
 	if (cmd->FindString("/INIT",line,true)) {
-		const bool wants_welcome_banner = control->GetStartupVerbosity() >=
-		                                  StartupVerbosity::High;
+#if C_BOXER
+		boxer_shellWillStartAutoexec(this);
+#endif
+		const bool wants_welcome_banner =
+		        (control->GetStartupVerbosity() >= StartupVerbosity::High)
+#if C_BOXER
+		        || boxer_shellShouldDisplayStartupMessages(this)
+#endif
+		        ;
 		if (wants_welcome_banner) {
 			WriteOut(MSG_Get("SHELL_STARTUP_BEGIN"),
 			         DOSBOX_GetDetailedVersion(), PRIMARY_MOD_NAME,
@@ -480,18 +509,44 @@ void DOS_Shell::Run()
 
 	is_shell_running = true;
 
-	while (!exit_cmd_called && !DOSBOX_IsShutdownRequested()) {
+	while (!exit_cmd_called && !DOSBOX_IsShutdownRequested()
+#if C_BOXER
+	       && boxer_shellShouldContinue(this)
+#endif
+	) {
 
+#if C_BOXER
+		// Let Boxer inject commands of its own ahead of the batch file
+		// and the interactive prompt.
+		if (boxer_hasPendingCommandsForShell(this)) {
+			boxer_executeNextPendingCommandForShell(this);
+		} else
+#endif
 		if (!batchfiles.empty()) {
 			RunBatchFile();
 		} else {
+#if C_BOXER
+			// Control has returned to the DOS prompt.
+			boxer_didReturnToShell(this);
+#endif
 			if (echo) {
 				ShowPrompt();
 			}
 			InputCommand(input_line);
+#if C_BOXER
+			// Boxer may have queued commands or asked to exit while
+			// we were blocked reading input.
+			if (boxer_shellShouldContinue(this) &&
+			    !boxer_hasPendingCommandsForShell(this))
+#endif
 			ParseLine(input_line);
 		}
 	}
+
+#if C_BOXER
+	currentShell = previousShell;
+	boxer_shellDidFinish(this);
+#endif
 }
 
 bool SHELL_IsRunning()

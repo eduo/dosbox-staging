@@ -344,6 +344,13 @@ if (OPT_PRINTER)
   set(C_PRINTER ON)
 endif()
 
+# Boxer embeds this core and injects hooks declared by its BXCoalface.h. Off for
+# stock builds, so the tree keeps building standalone.
+option(OPT_BOXER "Build as Boxer's embedded emulator core" OFF)
+if (OPT_BOXER)
+  set(C_BOXER ON)
+endif()
+
 if (OPT_DEBUGGER)
   set(C_DEBUGGER ON)
 

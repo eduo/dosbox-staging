@@ -48,6 +48,16 @@ public:
 	void SetEcho(bool echo_on);
 	[[nodiscard]] bool Echo() const;
 
+#if C_BOXER
+	// The name this batch file was invoked as. Boxer reports it when the
+	// batch file finishes; upstream's BatchFile no longer stores a
+	// filename of its own.
+	[[nodiscard]] const char* GetFileName() const
+	{
+		return cmd.GetFileName();
+	}
+#endif
+
 private:
 	[[nodiscard]] std::string ExpandedBatchLine(std::string_view line) const;
 	[[nodiscard]] std::optional<std::string> GetLine();
@@ -186,6 +196,12 @@ char* format_time(const uint8_t hour, const uint8_t min, const uint8_t sec,
 std::string format_number(const size_t num);
 
 std::string shorten_path(const std::string& path, const size_t max_len);
+
+
+#if C_BOXER
+// The shell Boxer currently considers active (see shell.cpp).
+extern DOS_Shell* currentShell;
+#endif
 
 void SHELL_InitAndRun();
 bool SHELL_IsRunning();

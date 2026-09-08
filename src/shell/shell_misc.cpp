@@ -16,6 +16,10 @@
 #include "cpu/registers.h"
 #include "misc/unicode.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 [[nodiscard]] static std::vector<std::string> get_completions(std::string_view command);
 static void run_binary_executable(std::string_view fullname, std::string_view args);
 
@@ -122,13 +126,42 @@ std::string DOS_Shell::ReadCommand()
 
 		bool viewing_tab_completions = false;
 
+#if C_BOXER
+		// Let Boxer know we are about to block on keyboard input, and
+		// let it break us out of the read loop.
+		boxer_shellWillReadCommandInputFromHandle(this, input_handle);
+		while (boxer_continueListeningForKeyEvents() &&
+		       !DOS_ReadFile(input_handle, &data, &byte_count)) {
+#else
 		while (!DOS_ReadFile(input_handle, &data, &byte_count)) {
+#endif
 			uint16_t dummy = 1;
 			DOS_CloseFile(input_handle);
 			DOS_OpenFile("con", 2, &dummy);
 			LOG(LOG_MISC, LOG_ERROR)
 			("Reopening the input handle. This is a bug!");
 		}
+#if C_BOXER
+		boxer_shellDidReadCommandInputFromHandle(this, input_handle);
+
+		if (!boxer_shellShouldContinue(this)) {
+			return command;
+		}
+
+		// TODO: boxer_handleShellCommandInput() is deliberately not
+		// wired up here. Upstream replaced the (char* line, cursor
+		// index) buffer model this hook was written against with a
+		// std::string built inside ReadCommand(), so the old signature
+		// -- boxer_handleShellCommandInput(shell, char*, Bitu*, bool*)
+		// -- no longer has anything to bind to. Re-enabling Boxer's
+		// command injection and rewriting needs a matching change on
+		// the Boxer side, e.g.
+		//   bool boxer_handleShellCommandInput(DOS_Shell*,
+		//                                      std::string& command,
+		//                                      size_t& cursor_position,
+		//                                      bool& execute_immediately);
+		// applied here, before the keypress is dispatched below.
+#endif
 
 		if (byte_count == 0) {
 			break;
@@ -502,6 +535,13 @@ bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
 	const auto fullname  = ResolvePath(name);
 	const auto extension = get_executable_extension(fullname);
 
+#if C_BOXER
+	// Boxer tracks what gets launched by canonical DOS path.
+	char canonicalPath[DOS_PATHLENGTH + 4] = {};
+	DOS_Canonicalize(fullname.c_str(), canonicalPath);
+	const std::string boxer_args(args);
+#endif
+
 	if (iequals(extension, ".BAT")) {
 		const auto current_echo = batchfiles.empty()
 		                             ? echo
@@ -509,6 +549,12 @@ bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
 		if (!batchfiles.empty() && !call) {
 			batchfiles.pop();
 		}
+
+#if C_BOXER
+		// boxer_shellDidEndBatchFile() is called much later, from the
+		// batch file's own destructor in shell_batch.cpp.
+		boxer_shellWillBeginBatchFile(this, canonicalPath, boxer_args.c_str());
+#endif
 
 		if (auto reader = FileReader::GetFileReader(fullname)) {
 			batchfiles.emplace(*psp,
@@ -524,7 +570,13 @@ bool DOS_Shell::ExecuteProgram(std::string_view name, std::string_view args)
 	}
 
 	if (iequals(extension, ".COM") || iequals(extension, ".EXE")) {
+#if C_BOXER
+		boxer_shellWillExecuteFileAtDOSPath(this, canonicalPath, boxer_args.c_str());
+#endif
 		run_binary_executable(fullname, args);
+#if C_BOXER
+		boxer_shellDidExecuteFileAtDOSPath(this, canonicalPath);
+#endif
 		return true;
 	}
 

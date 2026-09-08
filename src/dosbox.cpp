@@ -56,6 +56,10 @@
 #include "hardware/port.h"
 #include "hardware/parport/parport.h"
 #include "hardware/serialport/serialport.h"
+
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
 #include "hardware/timer.h"
 #include "hardware/video/reelmagic/reelmagic.h"
 #include "hardware/video/vga.h"
@@ -116,6 +120,13 @@ static Bitu normal_loop()
 	Bits ret;
 
 	while (true) {
+#if C_BOXER
+		// Short-circuit the emulation loop when Boxer wants control back.
+		if (!boxer_runLoopShouldContinue()) {
+			return 1;
+		}
+#endif
+
 		if (PIC_RunQueue()) {
 			if (WEBSERVER_IsEnabled()) {
 				Webserver::Bridge::Instance().ProcessRequests();
@@ -162,6 +173,13 @@ static Bitu normal_loop()
 			if (!GFX_PollAndHandleEvents()) {
 				return 0;
 			}
+#if C_BOXER
+			// Check again: our own events may have cancelled the
+			// emulation while they were being handled.
+			if (!boxer_runLoopShouldContinue()) {
+				return 1;
+			}
+#endif
 			if (ticks.remain > 0) {
 				TIMER_AddTick();
 				--ticks.remain;
@@ -422,8 +440,23 @@ static bool is_shutdown_requested = false;
 
 void DOSBOX_RunMachine()
 {
+#if C_BOXER
+	// Bracket each iteration with Boxer's callbacks, passing contextInfo
+	// along so it can tell nested runloops apart.
+	while (true) {
+		void* contextInfo = nullptr;
+		boxer_runLoopWillStartWithContextInfo(&contextInfo);
+		const auto ret = (*loop)();
+		boxer_runLoopDidFinishWithContextInfo(contextInfo);
+
+		if (ret != 0 || is_shutdown_requested) {
+			break;
+		}
+	}
+#else
 	while ((*loop)() == 0 && !is_shutdown_requested)
 		;
+#endif
 }
 
 void DOSBOX_RequestShutdown()

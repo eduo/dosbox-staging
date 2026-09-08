@@ -21,6 +21,10 @@
 #include "utils/math_utils.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 static const std::string ResourceDir = "freedos-keyboard";
 
 // A common pattern in the keyboard layout file is to try opening the requested
@@ -100,6 +104,54 @@ public:
 	KeyboardLayoutResult SwitchKeyboardLayout(const std::string& keyboard_layout,
 	                                          KeyboardLayout*& created_layout);
 	std::string GetLayoutName() const;
+
+#if C_BOXER
+	// Accessors Boxer needs to reflect and drive the layout state. Upstream
+	// has no equivalents: it only exposes GetLayoutName(), and switching
+	// goes through the much heavier SwitchKeyboardLayout().
+
+	// Stable reference, unlike GetLayoutName()'s by-value return, so callers
+	// can hand out a const char* safely.
+	const std::string& GetLayoutNameRef() const
+	{
+		return current_keyboard_layout;
+	}
+
+	bool IsForeignLayoutActive() const
+	{
+		return use_foreign_layout;
+	}
+
+	// Mirrors what the fork's switch_foreign_layout() did: flip the flag and
+	// reset any pending diacritic, exactly as SwitchKeyboardLayout() does on
+	// its own US/foreign paths.
+	void SetForeignLayoutActive(const bool active)
+	{
+		if (use_foreign_layout != active) {
+			use_foreign_layout   = active;
+			diacritics_character = 0;
+		}
+	}
+
+	bool IsUsLayout() const
+	{
+		return iequals(current_keyboard_layout, "US") ||
+		       iequals(current_keyboard_layout, "none");
+	}
+
+	// True if the current layout already covers this language code, so it
+	// can be used without swapping anything.
+	bool SupportsLanguageCode(const std::string& code) const
+	{
+		return std::any_of(available_layouts.begin(),
+		                   available_layouts.end(),
+		                   [&code](const std::string& layout) {
+			                   return layout.size() >= code.size() &&
+			                          iequals(layout.substr(0, code.size()),
+			                                  code);
+		                   });
+	}
+#endif
 
 private:
 	static constexpr uint8_t layout_pages = 12;
@@ -805,6 +857,56 @@ std::string KeyboardLayout::GetLayoutName() const
 }
 
 static std::unique_ptr<KeyboardLayout> loaded_layout = {};
+
+#if C_BOXER
+const char* boxer_keyboardLayoutName()
+{
+	if (loaded_layout) {
+		return loaded_layout->GetLayoutNameRef().c_str();
+	}
+	return nullptr;
+}
+
+bool boxer_keyboardLayoutLoaded()
+{
+	return loaded_layout != nullptr;
+}
+
+bool boxer_keyboardLayoutSupported(const char* code)
+{
+	if (!loaded_layout || !code) {
+		return false;
+	}
+
+	// Already covered by the current layout: nothing to change.
+	if (loaded_layout->SupportsLanguageCode(code)) {
+		return true;
+	}
+
+	// Otherwise it is still safe if swapping wouldn't change the code page.
+	return loaded_layout->ExtractCodePage(code) == dos.loaded_codepage;
+}
+
+bool boxer_keyboardLayoutActive()
+{
+	return loaded_layout && loaded_layout->IsForeignLayoutActive();
+}
+
+void boxer_setKeyboardLayoutActive(bool active)
+{
+	if (!loaded_layout) {
+		return;
+	}
+
+	// Force-disable for US layouts, to match how SwitchKeyboardLayout()
+	// treats them.
+	if (loaded_layout->IsUsLayout()) {
+		active = false;
+	}
+
+	loaded_layout->SetForeignLayoutActive(active);
+}
+#endif
 
 // called by int9-handler
 bool DOS_LayoutKey(const uint8_t key, const uint8_t flags1,

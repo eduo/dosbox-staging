@@ -19,6 +19,10 @@
 #include "utils/checks.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 CHECK_NARROWING();
 
 // ***************************************************************************
@@ -1525,7 +1529,20 @@ static void load_keyboard_layout()
 	}
 
 	if (tokens.empty() || config.keyboard_str == "auto") {
+#if C_BOXER
+		// Boxer resolves the host keyboard layout itself and hands us a
+		// DOSBox layout code; fall back to upstream's detection if it
+		// has no opinion.
+		const char* preferred = boxer_preferredKeyboardLayout();
+		if (preferred && *preferred) {
+			keyboard_layouts.emplace_back(
+			        KeyboardLayoutMaybeCodepage{preferred});
+		} else {
+			keyboard_layouts = get_detected_keyboard_layouts();
+		}
+#else
 		keyboard_layouts = get_detected_keyboard_layouts();
+#endif
 		using_detected   = true;
 	} else {
 		keyboard_layouts.emplace_back(KeyboardLayoutMaybeCodepage{tokens[0]});

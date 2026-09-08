@@ -25,6 +25,10 @@
 #include "utils/rgb888.h"
 #include "utils/string_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 CHECK_NARROWING();
 
 static void write_crtc_index_other(io_port_t, io_val_t value, io_width_t)
@@ -1506,6 +1510,73 @@ void VGA_SetupOther()
 		register_crtc_port_handlers_at_base(0x3d0);
 	}
 }
+
+#if C_BOXER
+// Accessors giving Boxer control over the Hercules and CGA display options it
+// exposes in its UI. Upstream drives these from config settings and mapper
+// hotkeys only.
+
+uint8_t boxer_herculesTintMode()
+{
+	return enum_val(hercules_palette);
+}
+
+void boxer_setHerculesTintMode(uint8_t mode)
+{
+	// Upstream gained a fourth monochrome palette (Paperwhite); the fork
+	// only knew three, so wrap on the real count rather than a literal 3.
+	const auto wrapped = static_cast<MonochromePalette>(
+	        mode % NumMonochromePalettes);
+
+	if (hercules_palette == wrapped) {
+		return;
+	}
+	hercules_palette = wrapped;
+
+	if (is_machine_hercules()) {
+		// Replaces the fork's Herc_Palette() + VGA_DAC_CombineColor(1,7).
+		VGA_SetHerculesPalette();
+	}
+	RENDER_SyncMonochromePaletteSetting(hercules_palette);
+}
+
+double boxer_CGACompositeHueOffset()
+{
+	return hue.get();
+}
+
+void boxer_setCGACompositeHueOffset(double offset)
+{
+	const auto new_hue = static_cast<int>(offset);
+	if (new_hue == hue.get()) {
+		return;
+	}
+	hue.set(new_hue);
+
+	if (is_machine_cga()) {
+		update_cga16_color();
+	}
+}
+
+uint8_t boxer_CGAComponentMode()
+{
+	return enum_val(cga_comp);
+}
+
+void boxer_setCGAComponentMode(uint8_t newCGA)
+{
+	cga_comp = static_cast<CompositeState>(newCGA);
+	if (enum_val(cga_comp) > enum_val(CompositeState::Off)) {
+		cga_comp = CompositeState::Auto;
+	}
+
+	// The fork poked write_cga() directly off vga.tandy.mode_control, which
+	// is now a bit_view register and no longer the one this path uses.
+	// Upstream factored the same work into apply_composite_state(), which
+	// also handles the PCJr case, so defer to it.
+	apply_composite_state();
+}
+#endif
 
 void COMPOSITE_Init()
 {

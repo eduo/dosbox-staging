@@ -25,6 +25,10 @@
 #include <string>
 #include <unordered_map>
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 CHECK_NARROWING();
 
 static const std::string MsgNotFound = " MESSAGE NOT FOUND! ";
@@ -965,6 +969,20 @@ void MSG_Add(const std::string& message_key, const std::string& message,
 
 std::string MSG_Get(const std::string& message_key)
 {
+#if C_BOXER
+	// Boxer keeps its own translations and overrides DOSBox's.
+	//
+	// NOTE: the fork replaced MSG_Get() outright and never consulted
+	// DOSBox's own dictionary. That is no longer safe: upstream now
+	// converts messages to the current DOS code page and expands ANSI
+	// markup here, and many messages added since 0.78 have no Boxer
+	// translation at all. So Boxer gets first refusal and DOSBox handles
+	// anything it doesn't know.
+	if (const char* localized = boxer_localizedStringForKey(message_key.c_str())) {
+		return localized;
+	}
+#endif
+
 	if (!check_message_exists(message_key)) {
 		return MsgNotFound;
 	}

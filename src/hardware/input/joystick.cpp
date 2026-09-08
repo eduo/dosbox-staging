@@ -18,6 +18,10 @@
 #include "ints/int10.h"
 #include "utils/math_utils.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 //TODO: higher axis can't be mapped. Find out why again
 
 //Set to true, to enable automated switching back to square on circle mode if the inputs are outside the cirle.
@@ -303,6 +307,33 @@ static void write_p201_timed(io_port_t, io_val_t, io_width_t)
 	}
 }
 
+#if C_BOXER
+// Boxer flips gameport timing at runtime and wants to know when a game actually
+// touches the gameport, so the handlers are routed through wrappers rather than
+// binding one of the two pairs once at install time. Non-static so Boxer can
+// toggle it.
+bool gameport_timed = true;
+
+static uint8_t read_p201_switchable(io_port_t port, io_width_t width)
+{
+	boxer_setJoystickActive(true);
+	if (gameport_timed && !write_active) {
+		return read_p201_timed(port, width);
+	}
+	return read_p201(port, width);
+}
+
+static void write_p201_switchable(io_port_t port, io_val_t val, io_width_t width)
+{
+	boxer_setJoystickActive(true);
+	if (gameport_timed) {
+		write_p201_timed(port, val, width);
+	} else {
+		write_p201(port, val, width);
+	}
+}
+#endif
+
 void JOYSTICK_Enable(uint8_t which, bool enabled)
 {
 	assert(which < 2);
@@ -584,12 +615,18 @@ public:
 		// detect and use them
 		if (is_visible) {
 			const bool wants_timed = section.GetBool("timed");
+#if C_BOXER
+			gameport_timed = wants_timed;
+			ReadHandler.Install(0x201, read_p201_switchable, io_width_t::byte);
+			WriteHandler.Install(0x201, write_p201_switchable, io_width_t::byte);
+#else
 			ReadHandler.Install(0x201,
 			                    wants_timed ? read_p201_timed : read_p201,
 			                    io_width_t::byte);
 			WriteHandler.Install(0x201,
 			                     wants_timed ? write_p201_timed : write_p201,
 			                     io_width_t::byte);
+#endif
 		}
 	}
 	~JOYSTICK() {

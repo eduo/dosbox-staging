@@ -12,6 +12,10 @@
 #include "hardware/memory.h"
 #include "hardware/port.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 static callback_number_t call_int16 = 0;
 static callback_number_t call_irq1  = 0;
 static callback_number_t call_irq6  = 0;
@@ -194,6 +198,12 @@ static void add_key(uint16_t code) {
 }
 
 static bool get_key(uint16_t &code) {
+#if C_BOXER
+	// Boxer injects pasted keystrokes ahead of the BIOS buffer.
+	if (boxer_getNextKeyCodeInPasteBuffer(&code, true)) {
+		return true;
+	}
+#endif
 	uint16_t start,end,head,tail,thead;
 	if (is_machine_pcjr()) {
 		/* should be done for cga and others as well, to be tested */
@@ -215,6 +225,12 @@ static bool get_key(uint16_t &code) {
 }
 
 static bool check_key(uint16_t &code) {
+#if C_BOXER
+	// Peek only: leave the keystroke in Boxer's paste buffer.
+	if (boxer_getNextKeyCodeInPasteBuffer(&code, false)) {
+		return true;
+	}
+#endif
 	uint16_t head,tail;
 	head =mem_readw(BIOS_KEYBOARD_BUFFER_HEAD);
 	tail =mem_readw(BIOS_KEYBOARD_BUFFER_TAIL);
@@ -334,7 +350,14 @@ static Bitu IRQ1_Handler(void) {
 		}
 		break;
 	case 0x3a:flags2 |=0x40;break;//CAPSLOCK
-	case 0xba:flags1 ^=0x40;flags2 &=~0x40;leds ^=0x04;break;
+	case 0xba:
+		flags1 ^= 0x40;
+		flags2 &= ~0x40;
+		leds ^= 0x04;
+#if C_BOXER
+		boxer_setCapsLockActive(flags1 & 0x40);
+#endif
+		break;
 	case 0x45:
 		if (flags3 &0x01) {
 			/* last scancode of pause received; first remove 0xe1-prefix */
@@ -373,10 +396,20 @@ static Bitu IRQ1_Handler(void) {
 			flags1^=0x20;
 			leds^=0x02;
 			flags2&=~0x20;
+#if C_BOXER
+			boxer_setNumLockActive(flags1 & 0x20);
+#endif
 		}
 		break;
 	case 0x46:flags2 |=0x10;break;				/* Scroll Lock SDL Seems to do this one fine (so break and make codes) */
-	case 0xc6:flags1 ^=0x10;flags2 &=~0x10;leds ^=0x01;break;
+	case 0xc6:
+		flags1 ^= 0x10;
+		flags2 &= ~0x10;
+		leds ^= 0x01;
+#if C_BOXER
+		boxer_setScrollLockActive(flags1 & 0x10);
+#endif
+		break;
 //	case 0x52:flags2|=128;break;//See numpad					/* Insert */
 	case 0xd2:	
 		if(flags3&0x02) { /* Maybe honour the insert on keypad as well */
@@ -523,6 +556,12 @@ static bool IsEnhancedKey(uint16_t &key) {
 
 static Bitu INT16_Handler(void) {
 	uint16_t temp=0;
+#if C_BOXER
+	// Boxer interrupts INT16 listening loops (the DOS prompt among others).
+	if (!boxer_continueListeningForKeyEvents()) {
+		return CBRET_STOP;
+	}
+#endif
 	switch (reg_ah) {
 	case 0x00: /* GET KEYSTROKE */
 		if ((get_key(temp)) && (!IsEnhancedKey(temp))) {

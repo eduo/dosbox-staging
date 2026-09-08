@@ -14,6 +14,10 @@
 #include "ints/int10.h"
 #include "utils/ascii.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 #define NUMBER_ANSI_DATA 10
 
 class device_CON final : public DOS_Device {
@@ -99,6 +103,14 @@ bool device_CON::Read(uint8_t* data, uint16_t* size)
 		// Read the key from the buffer
 		reg_ah = is_machine_ega_or_better() ? 0x10 : 0x0;
 		CALLBACK_RunRealInt(0x16);
+
+#if C_BOXER
+		// Boxer interrupts STDIN keyboard listening.
+		if (!boxer_continueListeningForKeyEvents()) {
+			reg_ax = oldax;
+			return false;
+		}
+#endif
 
 		switch (reg_al) {
 		case Ascii::CarriageReturn:
@@ -502,6 +514,13 @@ void device_CON::Close() {}
 
 uint16_t device_CON::GetInformation()
 {
+#if C_BOXER
+	// Key Available: Boxer still has pasted keycodes to deliver.
+	if (boxer_numKeyCodesInPasteBuffer()) {
+		return 0x8093;
+	}
+#endif
+
 	uint16_t head = mem_readw(BIOS_KEYBOARD_BUFFER_HEAD);
 	uint16_t tail = mem_readw(BIOS_KEYBOARD_BUFFER_TAIL);
 

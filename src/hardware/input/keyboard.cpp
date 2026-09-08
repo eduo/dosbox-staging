@@ -18,6 +18,10 @@
 #include "utils/bitops.h"
 #include "utils/checks.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 CHECK_NARROWING();
 
 // Emulates the PS/2 keybaord, as seen by the Intel 8042 microcontroller.
@@ -689,6 +693,18 @@ uint8_t KEYBOARD_GetLedState()
 	// We support only 3 leds
 	return (leds_all_on ? 0xff : led_state) & 0b0000'0111;
 }
+
+#if C_BOXER
+// Lets Boxer see how much room is left in the keyboard buffer before it pastes
+// more keystrokes in.
+Bitu boxer_keyboardBufferRemaining()
+{
+	if (buffer_num_used >= buffer_size) {
+		return 0;
+	}
+	return buffer_size - buffer_num_used;
+}
+#endif
 
 void KEYBOARD_ClrBuffer()
 {

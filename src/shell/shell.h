@@ -124,6 +124,16 @@ public:
 	void Run() override;
 	void RunBatchFile();
 
+#if C_BOXER
+	// Boxer decides whether to echo a command based on whether a batch file is
+	// running. 'batchfiles' is private at 0.83 (it used to be the public 'bf'
+	// pointer), so expose just the question Boxer actually asks.
+	[[nodiscard]] bool IsRunningBatchFile() const
+	{
+		return !batchfiles.empty();
+	}
+#endif
+
 	/* A load of subfunctions */
 	void ParseLine(char* line);
 	void InputCommand(char* line);

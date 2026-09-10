@@ -18,6 +18,9 @@
 #include "hardware/audio/soundblaster.h"
 #include "hardware/audio/tandy_sound.h"
 #include "hardware/input/joystick.h"
+#if C_PRINTER
+#include "hardware/parport/parport.h"
+#endif
 #include "hardware/input/mouse.h"
 #include "hardware/memory.h"
 #include "hardware/pic.h"
@@ -486,6 +489,48 @@ static Bitu INT12_Handler(void) {
 
 static Bitu INT17_Handler(void) {
 	LOG(LOG_BIOS,LOG_NORMAL)("INT17:Function %X",reg_ah);
+#if C_PRINTER
+	// Upstream has no parallel port emulation, so its INT 17h is a stub that
+	// reports a timeout for every write and a status of zero -- i.e. a printer
+	// that is permanently busy and never selected. Programs that *detect* a
+	// printer through the BIOS therefore never find one, even though writing
+	// bytes to the LPT registers works: DOS's own PRN/LPT1 device goes through
+	// CParallel::Putchar() at the port level and bypasses INT 17h entirely.
+	// That is why "ECHO x > PRN" prints while an application does not.
+	//
+	// This is the handler from the parallel port subsystem, restored alongside
+	// it. See "Printing" in FINDINGS.md.
+	if (reg_ah > 0x02 || reg_dx >= ParallelMaxPorts) {
+		LOG_MSG("BIOS INT17: Unhandled call AH=%2X DX=%4x", reg_ah, reg_dx);
+		return CBRET_NONE;
+	}
+
+	CParallel* port = parallelPortObjects[reg_dx];
+	if (!port) {
+		// No parallel port configured on this LPT number: leave the
+		// caller's registers alone rather than claiming success.
+		return CBRET_NONE;
+	}
+
+	switch (reg_ah) {
+	case 0x00: // PRINTER: Write Character
+		if (port->Putchar(reg_al)) {
+			reg_ah = port->getPrinterStatus();
+		} else {
+			reg_ah = 1; // timeout
+		}
+		break;
+
+	case 0x01: // PRINTER: Initialize port
+		port->initialize();
+		reg_ah = port->getPrinterStatus();
+		break;
+
+	case 0x02: // PRINTER: Get Status
+		reg_ah = port->getPrinterStatus();
+		break;
+	}
+#else
 	switch (reg_ah) {
 	case 0x00:              /* PRINTER: Write Character */
 		reg_ah=1;	/* Report a timeout */
@@ -496,6 +541,7 @@ static Bitu INT17_Handler(void) {
 		reg_ah=0;	
 		break;
 	};
+#endif
 	return CBRET_NONE;
 }
 

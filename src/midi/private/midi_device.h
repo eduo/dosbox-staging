@@ -60,6 +60,11 @@ namespace MidiDeviceName {
 // This is also Boxer's default, replacing upstream's 'port'.
 constexpr auto BoxerAuto = "auto";
 
+// 'default': what Boxer's own help documents as the default, and what a
+// user-written configuration is as likely to say as 'auto'. The 0.78 fork
+// treated the two identically and so do we.
+constexpr auto BoxerDefault = "default";
+
 // 'generalmidi': force General MIDI, defeating the MT-32 autodetection.
 // Boxer's shipped "General MIDI.conf" profile used to spell this 'coreaudio',
 // which now means upstream's own CoreAudio synth instead (D38).

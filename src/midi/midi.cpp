@@ -90,7 +90,8 @@ static std::unique_ptr<MidiDevice> create_device(
 	// autodetection (see private/midi_device.h and FINDINGS.md, D1/D38).
 	// Checked first so these names can never be shadowed by an upstream
 	// device of the same name.
-	if (name == BoxerAuto || name == BoxerGeneralMidi || name == Mt32) {
+	if (name == BoxerAuto || name == BoxerDefault ||
+	    name == BoxerGeneralMidi || name == Mt32) {
 		return BOXER_CreateMidiDevice(name, config);
 	}
 #endif
@@ -891,11 +892,15 @@ static void init_mididevice_settings(SectionProp& secprop)
 
 	str_prop->SetOptionHelp(MidiDeviceName::Mt32,
 	                        "  mt32:         Boxer's own MIDI output, forced to the MT-32.\n");
+
+	str_prop->SetOptionHelp(MidiDeviceName::BoxerDefault,
+	                        "  default:      A synonym for 'auto'.\n");
 #endif
 
 	str_prop->SetValues({MidiDevicePortPref,
 #if C_BOXER
 	                     MidiDeviceName::BoxerAuto,
+	                     MidiDeviceName::BoxerDefault,
 	                     MidiDeviceName::BoxerGeneralMidi,
 	                     MidiDeviceName::Mt32,
 #endif

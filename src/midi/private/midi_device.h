@@ -52,9 +52,9 @@ public:
 // BXGFXBridge.mm supplies a RenderBackend.
 //
 // These are the `mididevice` values that hand the MPU-401 stream to Boxer.
-// Everything else -- 'port', 'coremidi', 'coreaudio' -- still reaches
-// upstream's own devices, so a user who wants raw host MIDI or the macOS
-// SoundFont synth can still ask for it. See FINDINGS.md, D38.
+// 'port' and 'coreaudio' still reach upstream's own devices, so a user who
+// wants DOSBox's host-MIDI output or the macOS SoundFont synth can still ask
+// for it by name. See FINDINGS.md, D38.
 namespace MidiDeviceName {
 // 'auto': let Boxer decide, and autodetect MT-32 music from the SysEx stream.
 // This is also Boxer's default, replacing upstream's 'port'.
@@ -72,6 +72,15 @@ constexpr auto BoxerGeneralMidi = "generalmidi";
 
 // MidiDeviceName::Mt32 ('mt32') is Boxer's too: upstream's MT-32 is gated out
 // (C_MT32EMU 0, D11) precisely because Boxer supplies its own.
+
+// MidiDeviceName::CoreMidi ('coremidi') is Boxer's as well, and it is the one
+// name where Boxer's meaning and upstream's differ rather than overlap (D50).
+// To Boxer it means BXExternalMIDIDevice: `midiconfig` names the destination,
+// 'delaysysex' selects BXExternalMT32 (which spaces SysEx for a rev.0 MT-32),
+// and the device obeys Boxer's master volume and feeds its MT-32 bezels.
+// Upstream's own host-MIDI output is still reachable as 'port', which is why
+// midi.cpp routes on the configured name and not on the device that name
+// resolves to -- on macOS 'port' resolves to 'coremidi'.
 } // namespace MidiDeviceName
 
 // Implemented by Boxer in BXCoalfaceAudio.mm. Returns nullptr if `name` is not

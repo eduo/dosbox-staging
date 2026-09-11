@@ -85,17 +85,6 @@ static std::unique_ptr<MidiDevice> create_device(
 {
 	using namespace MidiDeviceName;
 
-#if C_BOXER
-	// Boxer's own MIDI stack, which owns device selection and MT-32
-	// autodetection (see private/midi_device.h and FINDINGS.md, D1/D38).
-	// Checked first so these names can never be shadowed by an upstream
-	// device of the same name.
-	if (name == BoxerAuto || name == BoxerDefault ||
-	    name == BoxerGeneralMidi || name == Mt32) {
-		return BOXER_CreateMidiDevice(name, config);
-	}
-#endif
-
 	// Internal MIDI synths
 #if C_SOUNDCANVAS
 	if (name == MidiDeviceName::SoundCanvas) {
@@ -663,31 +652,56 @@ public:
 
 		std::string midiconfig_prefs = section->GetString("midiconfig");
 
-		if (midiconfig_prefs.find("delaysysex") != std::string::npos) {
-			midi.sysex.start_ms = GetTicks();
-			midiconfig_prefs.erase(midiconfig_prefs.find("delaysysex"));
-			LOG_MSG("MIDI: Using delayed SysEx processing");
-		}
-
-		trim(midiconfig_prefs);
-
-		if (device_pref == MidiDevicePortPref) {
-			// Use system-level MIDI interface of the host OS
-#if C_COREMIDI
-			// macOS
-			midi.device = create_device(MidiDeviceName::CoreMidi,
-			                            midiconfig_prefs);
-#elif defined(WIN32)
-			// Windows
-			midi.device = create_device(MidiDeviceName::Win32,
-			                            midiconfig_prefs);
-#elif C_ALSA
-			// Linux
-			midi.device = create_device(MidiDeviceName::Alsa,
-			                            midiconfig_prefs);
+#if C_BOXER
+		// Boxer's own MIDI stack gets first refusal on the names it
+		// claims (private/midi_device.h; FINDINGS.md, D1/D38/D50).
+		//
+		// The decision is made on the *configured* name, not on the
+		// device that name resolves to, and that is the whole point:
+		// on macOS `port` resolves to 'coremidi' below, but only a
+		// literal `mididevice = coremidi` means "Boxer's external-MIDI
+		// support" -- with the destination index, the `delaysysex`
+		// spacing a rev.0 MT-32 needs, Boxer's volume and Boxer's MT-32
+		// bezels. Routing inside create_device() could not tell the two
+		// apart and would have taken `port` as well.
+		//
+		// Boxer is handed `midiconfig` verbatim, and DOSBox's own
+		// `delaysysex` handling below is skipped with it: Boxer spaces
+		// SysEx itself in BXExternalMT32, while DOSBox's version calls
+		// Delay() from the emulation thread. The 0.78 fork commented
+		// that block out for exactly this reason.
+		midi.device = BOXER_CreateMidiDevice(device_pref, midiconfig_prefs);
 #endif
-		} else {
-			midi.device = create_device(device_pref, midiconfig_prefs);
+
+		if (!midi.device) {
+			if (midiconfig_prefs.find("delaysysex") != std::string::npos) {
+				midi.sysex.start_ms = GetTicks();
+				midiconfig_prefs.erase(
+				        midiconfig_prefs.find("delaysysex"));
+				LOG_MSG("MIDI: Using delayed SysEx processing");
+			}
+
+			trim(midiconfig_prefs);
+
+			if (device_pref == MidiDevicePortPref) {
+				// Use system-level MIDI interface of the host OS
+#if C_COREMIDI
+				// macOS
+				midi.device = create_device(MidiDeviceName::CoreMidi,
+				                            midiconfig_prefs);
+#elif defined(WIN32)
+				// Windows
+				midi.device = create_device(MidiDeviceName::Win32,
+				                            midiconfig_prefs);
+#elif C_ALSA
+				// Linux
+				midi.device = create_device(MidiDeviceName::Alsa,
+				                            midiconfig_prefs);
+#endif
+			} else {
+				midi.device = create_device(device_pref,
+				                            midiconfig_prefs);
+			}
 		}
 
 		if (midi.device) {
@@ -895,6 +909,13 @@ static void init_mididevice_settings(SectionProp& secprop)
 
 	str_prop->SetOptionHelp(MidiDeviceName::BoxerDefault,
 	                        "  default:      A synonym for 'auto'.\n");
+
+	str_prop->SetOptionHelp(
+	        MidiDeviceName::CoreMidi,
+	        "  coremidi:     Boxer's own output to a MIDI device attached to your Mac. Set\n"
+	        "                'midiconfig' to the destination number, and add 'delaysysex'\n"
+	        "                if it is a rev.0 Roland MT-32 (e.g. 'midiconfig = 0 delaysysex').\n"
+	        "                Use 'port' instead for DOSBox's own host-MIDI output.\n");
 #endif
 
 	str_prop->SetValues({MidiDevicePortPref,
@@ -902,6 +923,7 @@ static void init_mididevice_settings(SectionProp& secprop)
 	                     MidiDeviceName::BoxerAuto,
 	                     MidiDeviceName::BoxerDefault,
 	                     MidiDeviceName::BoxerGeneralMidi,
+	                     MidiDeviceName::CoreMidi,
 	                     MidiDeviceName::Mt32,
 #endif
 #if C_COREAUDIO
@@ -921,7 +943,11 @@ static void init_mididevice_settings(SectionProp& secprop)
 	// Boxer configuration since 0.78 has asked for Boxer's own MIDI output.
 	str_prop->SetDeprecatedWithAlternateValue("auto", MidiDevicePortPref);
 #endif
+#if !C_BOXER
+	// Live for Boxer: it is how a Boxer configuration asks for Boxer's own
+	// external-MIDI support, which is not the same thing as 'port' (D50).
 	str_prop->SetDeprecatedWithAlternateValue("coremidi", MidiDevicePortPref);
+#endif
 	str_prop->SetDeprecatedWithAlternateValue("oss", MidiDevicePortPref);
 	str_prop->SetDeprecatedWithAlternateValue("win32", MidiDevicePortPref);
 }

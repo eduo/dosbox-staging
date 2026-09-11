@@ -85,6 +85,16 @@ static std::unique_ptr<MidiDevice> create_device(
 {
 	using namespace MidiDeviceName;
 
+#if C_BOXER
+	// Boxer's own MIDI stack, which owns device selection and MT-32
+	// autodetection (see private/midi_device.h and FINDINGS.md, D1/D38).
+	// Checked first so these names can never be shadowed by an upstream
+	// device of the same name.
+	if (name == BoxerAuto || name == BoxerGeneralMidi || name == Mt32) {
+		return BOXER_CreateMidiDevice(name, config);
+	}
+#endif
+
 	// Internal MIDI synths
 #if C_SOUNDCANVAS
 	if (name == MidiDeviceName::SoundCanvas) {
@@ -612,8 +622,16 @@ static std::string get_mididevice_setting()
 	return get_midi_section()->GetString("mididevice");
 }
 
-static auto MidiDevicePortPref    = "port";
+static auto MidiDevicePortPref = "port";
+
+#if C_BOXER
+// Boxer's own MIDI device is the default, under the name Preflight.conf has
+// always asked for. Upstream's 'port' is still selectable; it just is not what
+// a Boxer user gets by default (D38).
+static auto DefaultMidiDevicePref = MidiDeviceName::BoxerAuto;
+#else
 static auto DefaultMidiDevicePref = MidiDevicePortPref;
+#endif
 
 // We'll adapt the RtMidi library, eventually, so hold off any substantial
 // rewrites of the MIDI stuff until then to avoid unnecessary work.
@@ -629,6 +647,13 @@ public:
 		if (const auto device_has_bool = parse_bool_setting(device_pref);
 		    device_has_bool && *device_has_bool == false) {
 			LOG_MSG("MIDI: MIDI device set to 'none'; disabling MIDI output");
+#if C_BOXER
+			// No device means MIDI_RawOutByte() drops the stream
+			// before Boxer ever sees it, so tell Boxer directly:
+			// otherwise whichever device it attached for the
+			// previous configuration stays attached and audible.
+			BOXER_NotifyMidiDisabled();
+#endif
 			return;
 		}
 
@@ -682,6 +707,14 @@ void MIDI_ListDevices(MoreOutputStrings& output)
 	[[maybe_unused]] auto device_ptr = midi.device.get();
 
 	const std::string device_name = midi.device ? midi.device->GetName() : "";
+
+#if C_BOXER
+	// Boxer's devices are not enumerable from here -- the list lives in
+	// Boxer's own preferences UI -- but say so, rather than letting
+	// 'MIXER /LISTMIDI' imply that only upstream's devices exist.
+	write_device_name(MidiDeviceName::BoxerAuto);
+	output.AddString("  Chosen in Boxer's preferences.\n\n");
+#endif
 #if C_MT32EMU
 	write_device_name(MidiDeviceName::Mt32);
 
@@ -816,7 +849,7 @@ static void init_mididevice_settings(SectionProp& secprop)
 	                   "('%s' by default). Possible values:\n",
 	                   DefaultMidiDevicePref));
 
-	str_prop->SetOptionHelp(DefaultMidiDevicePref,
+	str_prop->SetOptionHelp(MidiDevicePortPref,
 	                        "  port:         A MIDI port of the host operating system's MIDI interface\n"
 	                        "                (default). You can configure the port to use with the\n"
 	                        "                'midiconfig' setting.\n");
@@ -843,7 +876,29 @@ static void init_mididevice_settings(SectionProp& secprop)
 
 	str_prop->SetOptionHelp("none", "  none:         Disable MIDI output.");
 
+#if C_BOXER
+	str_prop->SetOptionHelp(
+	        MidiDeviceName::BoxerAuto,
+	        "  auto:         Boxer's own MIDI output, with the music type detected from the\n"
+	        "                MIDI stream (default). Boxer picks the actual device from its\n"
+	        "                preferences, and switches to an MT-32-capable one if the game\n"
+	        "                turns out to play MT-32 music.\n");
+
+	str_prop->SetOptionHelp(
+	        MidiDeviceName::BoxerGeneralMidi,
+	        "  generalmidi:  Boxer's own MIDI output, forced to General MIDI. Use this for\n"
+	        "                games misdetected as supporting the MT-32.\n");
+
+	str_prop->SetOptionHelp(MidiDeviceName::Mt32,
+	                        "  mt32:         Boxer's own MIDI output, forced to the MT-32.\n");
+#endif
+
 	str_prop->SetValues({MidiDevicePortPref,
+#if C_BOXER
+	                     MidiDeviceName::BoxerAuto,
+	                     MidiDeviceName::BoxerGeneralMidi,
+	                     MidiDeviceName::Mt32,
+#endif
 #if C_COREAUDIO
 	                     MidiDeviceName::CoreAudio,
 #endif
@@ -855,11 +910,15 @@ static void init_mididevice_settings(SectionProp& secprop)
 	                     MidiDeviceName::FluidSynth,
 	                     "none"});
 
-	str_prop->SetDeprecatedWithAlternateValue("alsa", DefaultMidiDevicePref);
-	str_prop->SetDeprecatedWithAlternateValue("auto", DefaultMidiDevicePref);
-	str_prop->SetDeprecatedWithAlternateValue("coremidi", DefaultMidiDevicePref);
-	str_prop->SetDeprecatedWithAlternateValue("oss", DefaultMidiDevicePref);
-	str_prop->SetDeprecatedWithAlternateValue("win32", DefaultMidiDevicePref);
+	str_prop->SetDeprecatedWithAlternateValue("alsa", MidiDevicePortPref);
+#if !C_BOXER
+	// 'auto' is a live value for Boxer, not a retired one: it is how every
+	// Boxer configuration since 0.78 has asked for Boxer's own MIDI output.
+	str_prop->SetDeprecatedWithAlternateValue("auto", MidiDevicePortPref);
+#endif
+	str_prop->SetDeprecatedWithAlternateValue("coremidi", MidiDevicePortPref);
+	str_prop->SetDeprecatedWithAlternateValue("oss", MidiDevicePortPref);
+	str_prop->SetDeprecatedWithAlternateValue("win32", MidiDevicePortPref);
 }
 
 static void init_midiconfig_settings(SectionProp& secprop)

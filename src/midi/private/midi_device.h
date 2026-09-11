@@ -6,6 +6,8 @@
 #define DOSBOX_MIDI_DEVICE_H
 
 #include <cstdint>
+#include <memory>
+#include <string>
 
 #include "midi/midi.h"
 
@@ -39,6 +41,44 @@ public:
 	virtual void SendMidiMessage(const MidiMessage& msg)      = 0;
 	virtual void SendSysExMessage(uint8_t* sysex, size_t len) = 0;
 };
+
+#if C_BOXER
+// Boxer drives MIDI itself. It picks the output device from its own
+// preferences and UI (BXMIDISynth, BXExternalMIDIDevice, or MT-32 through
+// Boxer's own MT32Emu framework), and it can swap in an MT-32-capable device
+// mid-session when it sniffs MT-32 SysEx -- none of which upstream's device
+// list can express. So rather than patching midi.cpp's four send sites as the
+// 0.78 fork did, Boxer supplies a MidiDevice of its own, the same way
+// BXGFXBridge.mm supplies a RenderBackend.
+//
+// These are the `mididevice` values that hand the MPU-401 stream to Boxer.
+// Everything else -- 'port', 'coremidi', 'coreaudio' -- still reaches
+// upstream's own devices, so a user who wants raw host MIDI or the macOS
+// SoundFont synth can still ask for it. See FINDINGS.md, D38.
+namespace MidiDeviceName {
+// 'auto': let Boxer decide, and autodetect MT-32 music from the SysEx stream.
+// This is also Boxer's default, replacing upstream's 'port'.
+constexpr auto BoxerAuto = "auto";
+
+// 'generalmidi': force General MIDI, defeating the MT-32 autodetection.
+// Boxer's shipped "General MIDI.conf" profile used to spell this 'coreaudio',
+// which now means upstream's own CoreAudio synth instead (D38).
+constexpr auto BoxerGeneralMidi = "generalmidi";
+
+// MidiDeviceName::Mt32 ('mt32') is Boxer's too: upstream's MT-32 is gated out
+// (C_MT32EMU 0, D11) precisely because Boxer supplies its own.
+} // namespace MidiDeviceName
+
+// Implemented by Boxer in BXCoalfaceAudio.mm. Returns nullptr if `name` is not
+// one of the names above, so midi.cpp can fall through to its own devices.
+std::unique_ptr<MidiDevice> BOXER_CreateMidiDevice(const std::string& name,
+                                                   const std::string& config);
+
+// Called instead when MIDI output is switched off ('mididevice = none'), so
+// that Boxer drops its own device rather than leaving the last one attached
+// and audible.
+void BOXER_NotifyMidiDisabled();
+#endif // C_BOXER
 
 // Send All Notes Off and Reset All Controllers to all MIDI channels for this
 // device.

@@ -11,14 +11,18 @@
 
 #include "private/capture_audio.h"
 #include "private/capture_midi.h"
+#if C_CAPTURE_VIDEO
 #include "private/capture_video.h"
+#endif
 
 #include "config/config.h"
 #include "config/setup.h"
 #include "dosbox_config.h"
 #include "gui/mapper.h"
 #include "gui/titlebar.h"
+#if C_CAPTURE_IMAGE
 #include "image/image_capturer.h"
+#endif
 #include "misc/support.h"
 #include "utils/checks.h"
 #include "utils/fs_utils.h"
@@ -62,7 +66,9 @@ static struct {
 	}
 } capture = {};
 
+#if C_CAPTURE_IMAGE
 static std::unique_ptr<ImageCapturer> image_capturer = {};
+#endif
 
 bool CAPTURE_IsCapturingAudio()
 {
@@ -71,17 +77,21 @@ bool CAPTURE_IsCapturingAudio()
 
 bool CAPTURE_IsCapturingImage()
 {
+#if C_CAPTURE_IMAGE
 	if (image_capturer) {
 		return image_capturer->IsCaptureRequested();
 	}
+#endif
 	return false;
 }
 
 bool CAPTURE_IsCapturingPostRenderImage()
 {
+#if C_CAPTURE_IMAGE
 	if (image_capturer) {
 		return image_capturer->IsRenderedCaptureRequested();
 	}
+#endif
 	return false;
 }
 
@@ -375,6 +385,9 @@ FILE* CAPTURE_CreateFile(const CaptureType type,
 
 void CAPTURE_StartVideoCapture()
 {
+#if !C_CAPTURE_VIDEO
+	LOG_WARNING("CAPTURE: Video capture is not available in this build");
+#else
 	switch (capture.state.video) {
 	case CaptureState::Off:
 		capture.state.video = CaptureState::Pending;
@@ -385,10 +398,14 @@ void CAPTURE_StartVideoCapture()
 		LOG_WARNING("CAPTURE: Already capturing video output");
 		break;
 	}
+#endif
 }
 
 void CAPTURE_StopVideoCapture()
 {
+#if !C_CAPTURE_VIDEO
+	LOG_WARNING("CAPTURE: Video capture is not available in this build");
+#else
 	switch (capture.state.video) {
 	case CaptureState::Off:
 		LOG_WARNING("CAPTURE: Not capturing video output");
@@ -406,14 +423,19 @@ void CAPTURE_StopVideoCapture()
 		TITLEBAR_NotifyVideoCaptureStatus(false);
 		LOG_MSG("CAPTURE: Stopped capturing video output");
 	}
+#endif
 }
 
-void CAPTURE_AddFrame(const RenderedImage& image, const float frames_per_second)
+void CAPTURE_AddFrame([[maybe_unused]] const RenderedImage& image,
+                      [[maybe_unused]] const float frames_per_second)
 {
+#if C_CAPTURE_IMAGE
 	if (image_capturer) {
 		image_capturer->MaybeCaptureImage(image);
 	}
+#endif
 
+#if C_CAPTURE_VIDEO
 	switch (capture.state.video) {
 	case CaptureState::Off: break;
 	case CaptureState::Pending:
@@ -423,18 +445,22 @@ void CAPTURE_AddFrame(const RenderedImage& image, const float frames_per_second)
 		capture_video_add_frame(image, frames_per_second);
 		break;
 	}
+#endif
 }
 
-void CAPTURE_AddPostRenderImage(const RenderedImage& image)
+void CAPTURE_AddPostRenderImage([[maybe_unused]] const RenderedImage& image)
 {
+#if C_CAPTURE_IMAGE
 	if (image_capturer) {
 		image_capturer->CapturePostRenderImage(image);
 	}
+#endif
 }
 
 void CAPTURE_AddAudioData(const uint32_t sample_rate, const uint32_t num_sample_frames,
                           const int16_t* sample_frames)
 {
+#if C_CAPTURE_VIDEO
 	switch (capture.state.video) {
 	case CaptureState::Off: break;
 	case CaptureState::Pending:
@@ -446,6 +472,7 @@ void CAPTURE_AddAudioData(const uint32_t sample_rate, const uint32_t num_sample_
 		                             sample_frames);
 		break;
 	}
+#endif
 
 	switch (capture.state.audio) {
 	case CaptureState::Off: break;
@@ -522,6 +549,7 @@ static void handle_capture_midi_event(bool pressed)
 	}
 }
 
+#if C_CAPTURE_IMAGE
 static void handle_capture_grouped_screenshot_event(const bool pressed)
 {
 	// Ignore key-release events
@@ -566,6 +594,9 @@ static void handle_capture_single_rendered_screenshot_event(const bool pressed)
 	}
 }
 
+#endif // C_CAPTURE_IMAGE
+
+#if C_CAPTURE_VIDEO
 static void handle_capture_video_event(bool pressed)
 {
 	// Ignore key-release events
@@ -578,6 +609,7 @@ static void handle_capture_video_event(bool pressed)
 		CAPTURE_StartVideoCapture();
 	}
 }
+#endif // C_CAPTURE_VIDEO
 
 void CAPTURE_Init()
 {
@@ -595,9 +627,11 @@ void CAPTURE_Init()
 		capture.path = "capture";
 	}
 
+#if C_CAPTURE_IMAGE
 	const auto prefs = section->GetString("default_image_capture_formats");
 
 	image_capturer = std::make_unique<ImageCapturer>(prefs);
+#endif
 }
 
 void CAPTURE_Destroy()
@@ -612,14 +646,18 @@ void CAPTURE_Destroy()
 		capture.state.midi = CaptureState::Off;
 	}
 
+#if C_CAPTURE_IMAGE
 	// When destructed, the threaded image capturer instances do a blocking
 	// wait until all pending capture tasks are processed.
 	image_capturer = {};
+#endif
 
+#if C_CAPTURE_VIDEO
 	if (capture.state.video == CaptureState::InProgress) {
 		capture_video_finalise();
 		capture.state.video = CaptureState::Off;
 	}
+#endif
 
 	capture.reset();
 }
@@ -645,6 +683,7 @@ static void init_key_mappings()
 	                  "caprawmidi",
 	                  "Rec. MIDI");
 
+#if C_CAPTURE_IMAGE
 	MAPPER_AddHandler(handle_capture_grouped_screenshot_event,
 	                  SDL_SCANCODE_F5,
 	                  PRIMARY_MOD,
@@ -668,12 +707,15 @@ static void init_key_mappings()
 	                  MMOD2,
 	                  "rendshot",
 	                  "Rend Scrnshot");
+#endif // C_CAPTURE_IMAGE
 
+#if C_CAPTURE_VIDEO
 	MAPPER_AddHandler(handle_capture_video_event,
 	                  SDL_SCANCODE_F7,
 	                  PRIMARY_MOD,
 	                  "video",
 	                  "Rec. Video");
+#endif
 }
 
 static void init_capture_config_settings(SectionProp& section)

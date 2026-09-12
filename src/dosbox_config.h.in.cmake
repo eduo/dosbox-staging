@@ -218,4 +218,18 @@
 #cmakedefine CUSTOM_DATADIR "@CUSTOM_DATADIR@"
 
 
+// Optional features an embedder can drop along with the third-party library
+// each one exists to use. Stock builds enable all three; Boxer turns them off
+// because it can reach none of them -- see its FINDINGS.md, "D25".
+
+// The Opus CD-DA decoder (libopusfile, libopus, libogg)
+#cmakedefine01 C_OPUS
+
+// Screenshot capture (libpng, and zlib through it)
+#cmakedefine01 C_CAPTURE_IMAGE
+
+// Video capture and the ZMBV codec (zlib-ng)
+#cmakedefine01 C_CAPTURE_VIDEO
+
+
 #endif // DOSBOX_DOSBOX_CONFIG_H

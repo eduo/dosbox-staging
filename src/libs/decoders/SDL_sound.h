@@ -24,7 +24,8 @@
  *   - .WAV/.W64 (Microsoft WAVfile RIFF and Sony Wave64 data, via the dr_wav single-header codec)
  *   - .MP3  (MPEG-1 Layer 3 support via the dr_mp3 single-header decoder)
  *   - .OGG  (Ogg Vorbis support via the std_vorbis single-header decoder)
- *   - .OPUS (Ogg Opus support via the Opusfile and SpeexDSP libraries)
+ *   - .OPUS (Ogg Opus support via the Opusfile and SpeexDSP libraries;
+ *            only when C_OPUS is enabled)
  *   - .FLAC (Free Lossless Audio Codec support via the dr_flac single-header decoder)
  */
 

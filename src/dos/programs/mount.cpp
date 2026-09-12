@@ -1417,7 +1417,11 @@ void MOUNT::AddMessages()
 	        "  [color=light-cyan]PATH[reset]            directory on the host OS (absolute or relative path)\n"
 	        "  [color=light-cyan]IMAGEFILE[reset]       image file on the host OS (absolute or relative path) or on a\n"
 	        "                  mounted DOS drive (e.g. C:\\GAME.ISO)\n"
+#if C_OPUS
 	        "  [color=light-cyan]IMAGE-SET[reset]       ISO, CUE+BIN, CUE+ISO, or CUE+ISO+FLAC/OPUS/OGG/MP3/WAV\n"
+#else
+	        "  [color=light-cyan]IMAGE-SET[reset]       ISO, CUE+BIN, CUE+ISO, or CUE+ISO+FLAC/OGG/MP3/WAV\n"
+#endif
 	        "\n"
 	        "  -t [color=white]TYPE[reset]         type of mount: [color=light-cyan]dir[reset], [color=light-cyan]overlay[reset], [color=light-cyan]floppy[reset], [color=light-cyan]hdd[reset], [color=light-cyan]iso[reset] (or [color=light-cyan]cdrom[reset])\n"
 	        "  -fs [color=white]FS[reset]          filesystem: [color=light-cyan]fat[reset], [color=light-cyan]iso[reset], or [color=light-cyan]none[reset] (for bootable images)\n"

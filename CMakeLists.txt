@@ -371,6 +371,28 @@ if (OPT_BOXER)
   set(C_BOXER ON)
 endif()
 
+# The three below exist so an embedder can drop a third-party dependency whose
+# only purpose is a feature it cannot reach. Stock builds keep all of them.
+#
+# Opus is the only CD-DA codec that needs an external library: FLAC, Ogg Vorbis,
+# MP3 and WAV all decode through vendored headers.
+option(OPT_OPUS "Enable the Opus CD-DA decoder (needs opusfile)" ON)
+if (OPT_OPUS)
+  set(C_OPUS ON)
+endif()
+
+# Screenshot capture is the only user of libpng (and, through it, zlib).
+option(OPT_CAPTURE_IMAGE "Enable screenshot capture (needs libpng)" ON)
+if (OPT_CAPTURE_IMAGE)
+  set(C_CAPTURE_IMAGE ON)
+endif()
+
+# Video capture and the ZMBV codec are the only users of zlib-ng.
+option(OPT_CAPTURE_VIDEO "Enable video capture (needs zlib-ng)" ON)
+if (OPT_CAPTURE_VIDEO)
+  set(C_CAPTURE_VIDEO ON)
+endif()
+
 if (OPT_DEBUGGER)
   set(C_DEBUGGER ON)
 
@@ -494,7 +516,9 @@ find_package(PkgConfig REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(SDL2_image CONFIG REQUIRED)
 find_package(iir REQUIRED)
-find_package(PNG REQUIRED)
+if (C_CAPTURE_IMAGE)
+  find_package(PNG REQUIRED)
+endif()
 find_package(OpenGL REQUIRED)
 find_package(MT32Emu REQUIRED)
 find_package(FluidSynth REQUIRED CONFIG)

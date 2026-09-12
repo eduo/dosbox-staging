@@ -3842,33 +3842,28 @@ void boxer_setCpuCyclesToMax()
 	        CPU_CycleAutoAdjust ? "on" : "off");
 }
 
+// Both of these report what the CPU is *doing*, not what it was asked to do.
+// Reading them out of modern_cycles_config would only echo back whatever
+// boxer_setCpuCycles() last wrote there, which cannot disagree with itself and
+// so cannot detect an override. CPU_CycleMax and CPU_CycleAutoAdjust are what
+// the emulation loop actually consults.
+
 bool boxer_isCpuCyclesMax()
 {
-	if (legacy_cycles_mode) {
-		return CPU_CycleAutoAdjust;
+	// A throttled fixed speed also runs with auto-adjust on, but it is a fixed
+	// speed rather than "max": CPU_CycleLimit carries the value.
+	if (CPU_CycleAutoAdjust && CPU_CycleLimit > 0) {
+		return false;
 	}
-
-	const auto& conf = modern_cycles_config;
-	return conf.protected_mode_auto ? !conf.real_mode.has_value()
-	                                : !conf.protected_mode.has_value();
+	return CPU_CycleAutoAdjust;
 }
 
-// The speed actually in force, or 0 for "max". Read back rather than
-// remembered, so Boxer can tell whether what it asked for took effect.
 int boxer_cpuCycles()
 {
-	if (boxer_isCpuCyclesMax()) {
-		return 0;
+	if (CPU_CycleAutoAdjust) {
+		return (CPU_CycleLimit > 0) ? CPU_CycleLimit : 0;
 	}
-
-	if (legacy_cycles_mode) {
-		return CPU_CycleMax;
-	}
-
-	const auto& conf = modern_cycles_config;
-	const auto cycles = conf.protected_mode_auto ? conf.real_mode
-	                                             : conf.protected_mode;
-	return cycles.value_or(0);
+	return CPU_CycleMax;
 }
 
 } // extern "C"

@@ -39,6 +39,10 @@
 #include "misc/support.h"
 #include "dos/drives.h"
 
+#if C_BOXER
+#import "BXCoalface.h"
+#endif
+
 std::string get_primary_config_name()
 {
 	return DOSBOX_PROJECT_NAME ".conf";
@@ -53,7 +57,20 @@ std_fs::path get_primary_config_path()
 
 static std_fs::path get_or_create_config_dir()
 {
+#if C_BOXER
+	// Boxer asks for its own location rather than taking upstream's.
+	//
+	// This directory is not just the config file's home: it is also DOSBox's
+	// resource and plugin lookup root, so shaders, soundfonts, plugins, MT-32
+	// and SoundCanvas ROMs, the mapper file and the webserver directory all
+	// hang off it. Upstream puts that at ~/Library/Preferences/DOSBox -- a
+	// folder named for a different application, inside the directory macOS
+	// reserves for preference plists. Boxer already has somewhere for files
+	// like these, so they go beside its own instead. See D34.
+	const auto conf_path = std_fs::path(boxer_configDirPath());
+#else
 	const auto conf_path = resolve_home("~/Library/Preferences/DOSBox");
+#endif
 
 	if (!create_dir_if_not_exist(conf_path)) {
 		LOG_ERR("CONFIG: Can't create config directory '%s'",

@@ -3730,6 +3730,137 @@ bool Cpu::initialised = false;
 
 static std::unique_ptr<Cpu> cpu_instance = {};
 
+#if C_BOXER
+// Boxer drives the emulated CPU speed from its own Inspector rather than from
+// the config file or the mapper hotkeys, and two things make that more than a
+// matter of assigning CPU_CycleMax:
+//
+//  * In "modern" mode (the cpu_cycles / cpu_cycles_protected settings),
+//    set_modern_cycles_config() re-derives CPU_CycleMax from
+//    modern_cycles_config at every real<->protected mode switch and whenever a
+//    program exits -- so a bare poke at CPU_CycleMax is silently undone
+//    mid-game.
+//  * A gamebox last written by an older Boxer still carries `cycles`, which
+//    puts 0.83 into legacy_cycles_mode, where modern_cycles_config is *not*
+//    what drives the emulation.
+//
+// So these mirror what upstream's own Inc/Dec Cycles hotkeys do (see
+// cpu_increase_cycles() and cpu_increase_cycles_modern()): update whichever
+// model is live, sync the config section so `CONFIG -get` and a saved conf
+// agree, and apply it now. Deliberately *no* CPU_Destroy()/CPU_Init() -- that
+// is what the section's own update handler does, and Boxer calls these from
+// its UI thread while the emulation thread is running, the same way it has
+// always set cpudecoder.
+
+// Declared for Boxer in BXCoalface.h, which wraps its hooks in extern "C".
+// Given C linkage here rather than by including that header, so cpu.cpp does
+// not have to be compiled as Objective-C++ the way vga_other.cpp is.
+extern "C" {
+
+bool boxer_isLegacyCyclesMode()
+{
+	return legacy_cycles_mode;
+}
+
+// Boxer's speed is a deliberate user choice, so stop DOSBox restoring its own
+// auto-detected value when a program exits.
+static void boxer_claimCyclesFromAutoDetection()
+{
+	auto_determine_mode.auto_cycles      = false;
+	last_auto_determine_mode.auto_cycles = false;
+}
+
+void boxer_setCpuCycles(const int cycles)
+{
+	const auto fixed = clamp(cycles, CpuCyclesMin, CpuCyclesMax);
+
+	if (legacy_cycles_mode) {
+		CPU_CycleAutoAdjust = false;
+		CPU_CycleMax        = fixed;
+		CPU_CycleLeft       = 0;
+		CPU_Cycles          = 0;
+		old_cycle_max       = fixed;
+
+		set_section_property_value("cpu",
+		                           "cycles",
+		                           format_str("fixed %d", fixed));
+	} else {
+		auto& conf = modern_cycles_config;
+
+		// One speed for both real and protected mode: Boxer offers a
+		// single control, which is what cpu_cycles_protected = auto means.
+		conf.real_mode           = fixed;
+		conf.protected_mode      = {};
+		conf.protected_mode_auto = true;
+
+		sync_modern_cycles_settings();
+		set_modern_cycles_config(cpu.pmode ? CpuMode::Protected
+		                                   : CpuMode::Real);
+	}
+
+	boxer_claimCyclesFromAutoDetection();
+	TITLEBAR_NotifyCyclesChanged();
+}
+
+void boxer_setCpuCyclesToMax()
+{
+	if (legacy_cycles_mode) {
+		CPU_CycleMax        = 0;
+		CPU_CyclePercUsed   = 100;
+		CPU_CycleAutoAdjust = true;
+		CPU_CycleLimit      = -1;
+		CPU_CycleLeft       = 0;
+		CPU_Cycles          = 0;
+
+		set_section_property_value("cpu", "cycles", "max");
+	} else {
+		auto& conf = modern_cycles_config;
+
+		conf.real_mode           = {};
+		conf.protected_mode      = {};
+		conf.protected_mode_auto = true;
+
+		sync_modern_cycles_settings();
+		set_modern_cycles_config(cpu.pmode ? CpuMode::Protected
+		                                   : CpuMode::Real);
+	}
+
+	boxer_claimCyclesFromAutoDetection();
+	TITLEBAR_NotifyCyclesChanged();
+}
+
+bool boxer_isCpuCyclesMax()
+{
+	if (legacy_cycles_mode) {
+		return CPU_CycleAutoAdjust;
+	}
+
+	const auto& conf = modern_cycles_config;
+	return conf.protected_mode_auto ? !conf.real_mode.has_value()
+	                                : !conf.protected_mode.has_value();
+}
+
+// The speed actually in force, or 0 for "max". Read back rather than
+// remembered, so Boxer can tell whether what it asked for took effect.
+int boxer_cpuCycles()
+{
+	if (boxer_isCpuCyclesMax()) {
+		return 0;
+	}
+
+	if (legacy_cycles_mode) {
+		return CPU_CycleMax;
+	}
+
+	const auto& conf = modern_cycles_config;
+	const auto cycles = conf.protected_mode_auto ? conf.real_mode
+	                                             : conf.protected_mode;
+	return cycles.value_or(0);
+}
+
+} // extern "C"
+#endif // C_BOXER
+
 void CPU_Init()
 {
 	auto section = get_section("cpu");

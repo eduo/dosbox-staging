@@ -3800,6 +3800,15 @@ void boxer_setCpuCycles(const int cycles)
 
 	boxer_claimCyclesFromAutoDetection();
 	TITLEBAR_NotifyCyclesChanged();
+
+	// Boxer replaces the title bar, so TITLEBAR_NotifyCyclesChanged() above is a
+	// no-op for it and the cycle count has nowhere else to show. Log what was
+	// actually applied, not just what was asked for: the two differ if anything
+	// in the cycles machinery overrides us.
+	LOG_MSG("CPU: Boxer set fixed %d cycles (CPU_CycleMax %d, auto-adjust %s)",
+	        fixed,
+	        CPU_CycleMax,
+	        CPU_CycleAutoAdjust ? "on" : "off");
 }
 
 void boxer_setCpuCyclesToMax()
@@ -3827,6 +3836,10 @@ void boxer_setCpuCyclesToMax()
 
 	boxer_claimCyclesFromAutoDetection();
 	TITLEBAR_NotifyCyclesChanged();
+
+	LOG_MSG("CPU: Boxer set max cycles (CPU_CycleMax %d, auto-adjust %s)",
+	        CPU_CycleMax,
+	        CPU_CycleAutoAdjust ? "on" : "off");
 }
 
 bool boxer_isCpuCyclesMax()

@@ -148,19 +148,33 @@ std::string DOS_Shell::ReadCommand()
 			return command;
 		}
 
-		// TODO: boxer_handleShellCommandInput() is deliberately not
-		// wired up here. Upstream replaced the (char* line, cursor
-		// index) buffer model this hook was written against with a
-		// std::string built inside ReadCommand(), so the old signature
-		// -- boxer_handleShellCommandInput(shell, char*, Bitu*, bool*)
-		// -- no longer has anything to bind to. Re-enabling Boxer's
-		// command injection and rewriting needs a matching change on
-		// the Boxer side, e.g.
-		//   bool boxer_handleShellCommandInput(DOS_Shell*,
-		//                                      std::string& command,
-		//                                      size_t& cursor_position,
-		//                                      bool& execute_immediately);
-		// applied here, before the keypress is dispatched below.
+		// Boxer gets to rewrite the line, or to take the shell away
+		// from the prompt entirely. This is not optional bookkeeping:
+		// boxer_continueListeningForKeyEvents() breaks the read above
+		// out of INT 16h when Boxer queues a command, and *nothing*
+		// else here ends the read loop afterwards -- the last byte
+		// read is left unconsumed and re-dispatched forever, which is
+		// what made a launch-panel click print one character over and
+		// over instead of running the program.
+		bool execute_immediately = false;
+		if (boxer_handleShellCommandInput(this, command, cursor_position,
+		                                  execute_immediately)) {
+			if (execute_immediately) {
+				// Abandon whatever was typed and return to
+				// Run(), which drains Boxer's queue before it
+				// reads input again. The partial line is
+				// deliberately dropped rather than returned:
+				// Run() would not parse it (it skips ParseLine
+				// while commands are pending) but InputCommand()
+				// would put it in the history.
+				return "";
+			}
+			// Boxer rewrote the line in place. 0.83's CommandPrompt
+			// redraws it and puts the cursor back, so the manual
+			// backspacing the old hook did is not needed.
+			prompt.Update(command, cursor_position);
+			continue;
+		}
 #endif
 
 		if (byte_count == 0) {

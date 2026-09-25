@@ -14,9 +14,11 @@
 > parallel port), and all of them are guarded by the `C_BOXER` build option.
 >
 > It is meant to be built from Boxer's Xcode project as the `DOSBox-Staging`
-> submodule, not on its own. This is a work in progress and is not
-> affiliated with or endorsed by the DOSBox Staging or Boxer maintainers. The
-> rest of this README is the upstream DOSBox Staging v0.83.0 text, unchanged.
+> submodule, not on its own. What to install and how to build are in
+> [that branch's README](https://github.com/eduo/Boxer/tree/DosBox_Staging_0.83#building-this-branch).
+> This is a work in progress and is not affiliated with or endorsed by the
+> DOSBox Staging or Boxer maintainers. The rest of this README is the upstream
+> DOSBox Staging v0.83.0 text, unchanged.
 
 # DOSBox Staging
 

@@ -1,3 +1,23 @@
+> [!NOTE]
+> **About the `boxer-0.83` branch**
+>
+> This branch is an unofficial fork of DOSBox Staging, made to serve as the
+> emulator core inside [Boxer](https://github.com/eduo/Boxer/tree/DosBox_Staging_0.83),
+> the macOS DOS game emulator. It replaces
+> [MaddTheSane/dosbox-staging](https://github.com/MaddTheSane/dosbox-staging)'s
+> Boxer fork, which was based on DOSBox Staging 0.78.1.
+>
+> It starts from the **v0.83.0** release tag, not from the old fork, and adds
+> the hooks Boxer needs. Where possible these build on upstream's own
+> extension points (`RenderBackend`, `MidiDevice`, the mixer API). Direct
+> patches are used only where upstream has no seam (shell, drives, keyboard,
+> parallel port), and all of them are guarded by the `C_BOXER` build option.
+>
+> It is meant to be built from Boxer's Xcode project as the `DOSBox-Staging`
+> submodule, not on its own. This is a work in progress and is not
+> affiliated with or endorsed by the DOSBox Staging or Boxer maintainers. The
+> rest of this README is the upstream DOSBox Staging v0.83.0 text, unchanged.
+
 # DOSBox Staging
 
 ![GPL-2.0-or-later][gpl-badge]
